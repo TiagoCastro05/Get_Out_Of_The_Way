@@ -1,15 +1,15 @@
-// Adiciona PoseNet para detecção corporal
+// PARTE 1: Webcam + PoseNet (captura e detecção corporal)
 let poseNet;
 let poses = [];
 
 // Altera o estado inicial do jogo
-let gameState = "start"; // start | loading | ready | playing | finished
+let gameState = "start"; // start | playing | finished
 let score = 0;
 let bestScore = 0;
-let gameDuration = 60;
+let elapsedTime = 0; // Tempo crescente
 let startTime = 0;
-let remainingTime = gameDuration;
 let lives = 3;
+let gameOverTime = 0; // Para contar 5 segundos após game over
 
 // Obstáculos e colisões
 let obstacles = [];
@@ -24,11 +24,10 @@ let player = {
   x: 480,
   y: 270,
   radius: 30,
-  hasHand: false,
 };
 
 function setup() {
-  createCanvas(960, 540);
+  createCanvas(windowWidth, windowHeight); // Fullscreen
   textFont("Trebuchet MS");
 
   video = createCapture(VIDEO);
@@ -45,8 +44,6 @@ function setup() {
   poseNet.on("pose", function (results) {
     poses = results;
   });
-
-  setupHandPose();
 }
 
 function draw() {
@@ -54,24 +51,20 @@ function draw() {
 
   if (gameState === "start") {
     drawStartScreen();
-    // Detecção de T-Pose para iniciar o jogo
+    // Detecção de T-Pose para iniciar o jogo automaticamente
     if (detectTPose()) {
-      gameState = "loading";
+      gameState = "playing";
+      startTime = millis();
+      elapsedTime = 0;
     }
     return;
   }
 
-  updatePlayerFromHand();
+  updatePlayerFromBody();
 
   switch (gameState) {
-    case "loading":
-      drawOverlay("A carregar modelo HandPose...");
-      break;
-    case "ready":
-      drawReadyScreen();
-      drawPlayer();
-      break;
     case "playing":
+      elapsedTime = floor((millis() - startTime) / 1000);
       updateGame();
       drawItems();
       drawPlayer();
@@ -82,6 +75,10 @@ function draw() {
       drawPlayer();
       drawHud();
       drawFinishedScreen();
+      // Verifica se já passaram 5 segundos
+      if (millis() - gameOverTime > 5000) {
+        resetGame();
+      }
       break;
   }
 }
@@ -122,16 +119,7 @@ function detectTPose() {
   return false;
 }
 
-// Funções adicionais para completar o jogo
-function setupHandPose() {
-  handposeModel = ml5.handpose(video, () => {
-    gameState = "ready";
-  });
-
-  handposeModel.on("predict", (results) => {
-    predictions = results;
-  });
-}
+// Atualiza posição do jogador baseada na posição do corpo
 
 function drawMirroredVideo() {
   push();
@@ -152,29 +140,22 @@ function drawOverlay(message) {
   text(message, width / 2, height / 2);
 }
 
-function drawReadyScreen() {
-  fill(0);
-  textSize(32);
-  textAlign(CENTER);
-  text("Pronto! Clica para começar", width / 2, height / 2);
-}
-
 function drawPlayer() {
   fill(255, 200, 0);
   circle(player.x, player.y, player.radius * 2);
 }
 
-function updatePlayerFromHand() {
-  if (predictions.length > 0) {
-    let indexTip = predictions[0].landmarks[8];
-    let targetX = width - indexTip[0];
-    let targetY = indexTip[1];
+function updatePlayerFromBody() {
+  if (poses.length > 0) {
+    let pose = poses[0].pose;
+    let nose = pose.nose;
 
-    player.x = lerp(player.x, targetX, 0.35);
-    player.y = lerp(player.y, targetY, 0.35);
-    player.hasHand = true;
-  } else {
-    player.hasHand = false;
+    // Espelha a posição X (webcam está virada)
+    let targetX = width - nose.x;
+    let targetY = nose.y;
+
+    player.x = lerp(player.x, targetX, 0.3);
+    player.y = lerp(player.y, targetY, 0.3);
   }
 
   player.x = constrain(player.x, player.radius, width - player.radius);
@@ -182,11 +163,10 @@ function updatePlayerFromHand() {
 }
 
 function updateGame() {
-  remainingTime = max(0, gameDuration - floor((millis() - startTime) / 1000));
-
-  // Spawn de obstáculos
+  // Spawn de obstáculos (aumenta velocidade com o tempo)
   spawnCounter++;
-  if (spawnCounter > spawnIntervalFrames) {
+  let difficulty = 1 + elapsedTime / 30; // Aumenta dificuldade
+  if (spawnCounter > spawnIntervalFrames / difficulty) {
     addObstacle();
     spawnCounter = 0;
   }
@@ -275,17 +255,17 @@ function drawItems() {
 
 function drawHud() {
   fill(255);
-  textSize(24);
+  textSize(28);
   textAlign(LEFT);
-  text("Tempo: " + remainingTime + "s", 20, 30);
-  text("Vidas: " + lives, 20, 60);
-  text("Score: " + score, 20, 90);
+  text("Tempo: " + elapsedTime + "s", 30, 50);
+  text("Vidas: " + lives, 30, 90);
 }
 
 function finishGame() {
   gameState = "finished";
-  if (remainingTime > bestScore) {
-    bestScore = remainingTime;
+  gameOverTime = millis(); // Marca o tempo em que o jogo terminou
+  if (elapsedTime > bestScore) {
+    bestScore = elapsedTime;
   }
 }
 
@@ -294,33 +274,34 @@ function drawFinishedScreen() {
   rect(0, 0, width, height);
 
   fill(255);
-  textSize(40);
+  textSize(48);
   textAlign(CENTER);
-  text("Game Over!", width / 2, 150);
+  text("Game Over!", width / 2, height / 2 - 100);
 
+  textSize(32);
+  text("Tempo: " + elapsedTime + "s", width / 2, height / 2);
+  text("Melhor Tempo: " + bestScore + "s", width / 2, height / 2 + 60);
+
+  // Contador para voltar ao menu
+  let timeLeft = 5 - floor((millis() - gameOverTime) / 1000);
   textSize(24);
-  text("Tempo: " + remainingTime + "s", width / 2, 250);
-  text("Melhor Tempo: " + bestScore + "s", width / 2, 300);
-  text("Clica para voltar ao início", width / 2, 400);
-
-  if (mouseIsPressed) {
-    resetGame();
-  }
+  text(
+    "Voltando ao menu em " + max(0, timeLeft) + "s...",
+    width / 2,
+    height / 2 + 140,
+  );
 }
 
 function resetGame() {
   gameState = "start";
   score = 0;
   lives = 3;
-  remainingTime = gameDuration;
+  elapsedTime = 0;
   obstacles = [];
   spawnCounter = 0;
 }
 
-function mousePressed() {
-  if (gameState === "ready") {
-    gameState = "playing";
-    startTime = millis();
-    remainingTime = gameDuration;
-  }
+// Responsivo para redimensionamento de janela
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
 }
