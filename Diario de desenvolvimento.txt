@@ -1,15 +1,78 @@
-Sessão 1 – 16 de março de 2026
-Objetivo: Começar a criar jogo
-
+Sessao 1 - 16 de marco de 2026
+Objetivo: Definir conceito do exercicio e preparar estrutura base.
 
 Atividades realizadas:
-
+- Definido o conceito "Get Out Of The Way" para treino cognitivo e motor.
+- Identificado objetivo principal: apanhar alvos uteis e evitar distratores.
+- Organizada a pasta de trabalho com base no exemplo `p5/empty-example`.
 
 Problemas:
+- Dificuldade inicial em escolher mecanica simples e intuitiva.
 
-Solução:
+Solucao:
+- Escolha de uma mecanica de "apanhar e evitar" por ser facil de perceber.
 
-Decisões:
+Decisoes:
+- Utilizar webcam + ML5 `HandPose` para cumprir interacao por mao.
 
+---------------------------------------------------------------------
+
+Sessao 2 - 16 de marco de 2026
+Objetivo: Implementar captura de webcam e detecao da mao.
+
+Atividades realizadas:
+- Integrada biblioteca `ml5.js` no `index.html`.
+- Implementada captura de video em tempo real com `createCapture(VIDEO)`.
+- Configurado modelo `HandPose` e leitura das predicoes.
+
+Problemas:
+- Coordenadas da webcam apareciam invertidas (efeito espelho).
+
+Solucao:
+- Espelhado o video no canvas e ajustada a coordenada X para o cursor virtual.
+
+Decisoes:
+- Controlar o jogo com a ponta do dedo indicador (landmark 8).
+
+---------------------------------------------------------------------
+
+Sessao 3 - 16 de marco de 2026
+Objetivo: Criar logica principal do exercicio (pontuacao, tempo e aleatoriedade).
+
+Atividades realizadas:
+- Criado sistema de estados: `loading`, `ready`, `playing`, `finished`.
+- Adicionado cronometro de 60 segundos e HUD com pontuacao.
+- Implementado spawn aleatorio de bolas com random controlado (tipo, velocidade, tamanho, posicao).
+- Definidas regras de pontuacao: verde (+10), vermelho (-8), verde perdida (-2).
+
+Problemas:
+- Acumulacao excessiva de objetos no ecra apos alguns segundos.
+
+Solucao:
+- Definido limite maximo de objetos ativos e remocao ao sair do ecra.
+
+Decisoes:
+- Usar 70% alvos uteis e 30% distratores para manter desafio equilibrado.
+
+---------------------------------------------------------------------
+
+Sessao 4 - 16 de marco de 2026
+Objetivo: Melhorar usabilidade, repeticao e documentacao de entrega.
+
+Atividades realizadas:
+- Adicionadas instrucoes visuais de inicio e fim de jogo.
+- Implementado reinicio com tecla `R`.
+- Atualizado `README.md` com objetivos, regras e tecnologias.
+- Elaborado relatorio em Markdown com secoes obrigatorias.
+- Registado diario de desenvolvimento com sessoes e decisoes.
+
+Problemas:
+- Necessidade de garantir que o jogo continue legivel sobre o video da webcam.
+
+Solucao:
+- Adicionada camada semitransparente para aumentar contraste dos elementos UI.
+
+Decisoes:
+- Manter interface simples para facilitar avaliacao e demonstracao em video curto.
 
 ---------------------------------------------------------------------
