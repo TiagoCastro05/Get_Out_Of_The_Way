@@ -1,7 +1,9 @@
+// PARTE 1: Webcam + HandPose (captura e deteccao)
 let video;
 let handposeModel;
 let predictions = [];
 
+// PARTE 2: Cursor controlado pela mao
 let player = {
   x: 320,
   y: 240,
@@ -9,6 +11,7 @@ let player = {
   hasHand: false,
 };
 
+// PARTE 3: Logica de jogo (estado, score, tempo)
 let gameState = "loading"; // loading | ready | playing | finished
 let score = 0;
 let bestScore = 0;
@@ -16,6 +19,7 @@ let gameDuration = 60;
 let startTime = 0;
 let remainingTime = gameDuration;
 
+// PARTE 4: Objetos aleatorios e colisoes
 let items = [];
 let spawnCounter = 0;
 let spawnIntervalFrames = 22;
@@ -26,6 +30,7 @@ let badColor;
 
 function setup() {
   createCanvas(960, 540);
+  textFont("Trebuchet MS");
 
   video = createCapture(VIDEO);
   video.size(width, height);
@@ -90,8 +95,12 @@ function updatePlayerFromHand() {
   if (predictions.length > 0) {
     // Use index fingertip for direct and intuitive control.
     let indexTip = predictions[0].landmarks[8];
-    player.x = width - indexTip[0];
-    player.y = indexTip[1];
+    let targetX = width - indexTip[0];
+    let targetY = indexTip[1];
+
+    // Smooth movement to reduce jitter from camera noise.
+    player.x = lerp(player.x, targetX, 0.35);
+    player.y = lerp(player.y, targetY, 0.35);
     player.hasHand = true;
   } else {
     player.hasHand = false;
@@ -206,6 +215,13 @@ function drawReadyScreen() {
     width / 2,
     height / 2 + 42,
   );
+
+  textSize(18);
+  text(
+    "Implementacao por partes: Webcam -> Mao -> Objetos -> Pontuacao/Tempo",
+    width / 2,
+    height / 2 + 80,
+  );
 }
 
 function drawFinishedScreen() {
@@ -269,6 +285,9 @@ function finishGame() {
 
 function keyPressed() {
   if (key === " " && gameState === "ready") {
+    if (!player.hasHand) {
+      return;
+    }
     startGame();
   }
 
