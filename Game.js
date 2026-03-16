@@ -2,6 +2,18 @@
 let poseNet;
 let poses = [];
 
+// Imagens de obstáculos
+let knifeImage;
+let bulletImage;
+let heartImage;
+
+// Debug
+let debugMode = true;
+let debugButtonX = 0;
+let debugButtonY = 0;
+let debugButtonW = 200;
+let debugButtonH = 60;
+
 // Altera o estado inicial do jogo
 let gameState = "start"; // start | playing | finished
 let score = 0;
@@ -23,7 +35,6 @@ let badColor;
 let player = {
   x: 480,
   y: 270,
-  radius: 30,
 };
 
 function setup() {
@@ -36,6 +47,11 @@ function setup() {
 
   goodColor = color(78, 226, 143);
   badColor = color(240, 88, 88);
+
+  // Carrega imagens de obstáculos
+  knifeImage = loadImage("./Imagens/Knife.png");
+  bulletImage = loadImage("./Imagens/Bullet.png");
+  heartImage = loadImage("./Imagens/Heart.png");
 
   // Inicializa PoseNet para detecção corporal
   poseNet = ml5.poseNet(video, () => {
@@ -101,6 +117,11 @@ function drawStartScreen() {
   textAlign(RIGHT);
   text("Como iniciar o jogo:", width - 50, 140);
   text("Levanta os braços (T-Pose)!", width - 50, 170);
+
+  // Botão de Debug
+  if (debugMode) {
+    drawDebugButton();
+  }
 }
 
 // Detecção simples de T-Pose: ambos braços levantados
@@ -141,8 +162,40 @@ function drawOverlay(message) {
 }
 
 function drawPlayer() {
-  fill(255, 200, 0);
-  circle(player.x, player.y, player.radius * 2);
+  // Desenha o corpo do jogador baseado nos pontos do PoseNet
+  if (poses.length > 0) {
+    let pose = poses[0].pose;
+
+    // Cabeça
+    noStroke();
+    fill(255, 200, 0);
+    circle(width - pose.nose.x, pose.nose.y, 25);
+
+    // Corpo (pontos principais)
+    let bodyPoints = [
+      pose.nose,
+      pose.leftEye,
+      pose.rightEye,
+      pose.leftShoulder,
+      pose.rightShoulder,
+      pose.leftElbow,
+      pose.rightElbow,
+      pose.leftWrist,
+      pose.rightWrist,
+      pose.leftHip,
+      pose.rightHip,
+      pose.leftKnee,
+      pose.rightKnee,
+      pose.leftAnkle,
+      pose.rightAnkle,
+    ];
+
+    // Desenha pontos do corpo como hitbox
+    for (let point of bodyPoints) {
+      fill(255, 200, 0, 150);
+      circle(width - point.x, point.y, 10);
+    }
+  }
 }
 
 function updatePlayerFromBody() {
@@ -157,9 +210,6 @@ function updatePlayerFromBody() {
     player.x = lerp(player.x, targetX, 0.3);
     player.y = lerp(player.y, targetY, 0.3);
   }
-
-  player.x = constrain(player.x, player.radius, width - player.radius);
-  player.y = constrain(player.y, player.radius, height - player.radius);
 }
 
 function updateGame() {
@@ -227,16 +277,79 @@ class Obstacle {
 
   display() {
     if (this.type === "knife") {
-      fill(255, 100, 100);
+      this.drawKnife();
     } else {
-      fill(255, 200, 0);
+      this.drawBullet();
     }
-    circle(this.x, this.y, this.size);
+  }
+
+  drawKnife() {
+    push();
+    translate(this.x, this.y);
+
+    // Calcula rotação baseada na direção
+    // Faca aponta naturalmente para cima, então adicionamos PI/2 para ajustar
+    let angle = atan2(this.vy, this.vx) + PI / 2;
+    rotate(angle);
+
+    // Desenha imagem da faca
+    imageMode(CENTER);
+    image(knifeImage, 0, 0, 40, 40);
+
+    pop();
+  }
+
+  drawBullet() {
+    push();
+    translate(this.x, this.y);
+
+    // Calcula rotação baseada na direção
+    // Bala aponta naturalmente para esquerda (PI), então subtraímos PI para ajustar
+    let angle = atan2(this.vy, this.vx) - PI;
+    rotate(angle);
+
+    // Desenha imagem da bala
+    imageMode(CENTER);
+    image(bulletImage, 0, 0, 35, 35);
+
+    pop();
   }
 
   collidesWith(player) {
-    let distance = dist(this.x, this.y, player.x, player.y);
-    return distance < this.size / 2 + player.radius;
+    // Verifica colisão contra todos os pontos do corpo do jogador
+    if (poses.length > 0) {
+      let pose = poses[0].pose;
+      let bodyPoints = [
+        pose.nose,
+        pose.leftEye,
+        pose.rightEye,
+        pose.leftShoulder,
+        pose.rightShoulder,
+        pose.leftElbow,
+        pose.rightElbow,
+        pose.leftWrist,
+        pose.rightWrist,
+        pose.leftHip,
+        pose.rightHip,
+        pose.leftKnee,
+        pose.rightKnee,
+        pose.leftAnkle,
+        pose.rightAnkle,
+      ];
+
+      // Verifica distância em relação a cada ponto do corpo
+      for (let point of bodyPoints) {
+        let bodyX = width - point.x; // Espelha a posição X
+        let bodyY = point.y;
+        let distance = dist(this.x, this.y, bodyX, bodyY);
+
+        // Se colidir com qualquer ponto do corpo (raio de 15 pixels)
+        if (distance < 15) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   isOffScreen() {
@@ -258,7 +371,12 @@ function drawHud() {
   textSize(28);
   textAlign(LEFT);
   text("Tempo: " + elapsedTime + "s", 30, 50);
-  text("Vidas: " + lives, 30, 90);
+
+  // Desenha vidas com imagens de coração
+  imageMode(CORNER);
+  for (let i = 0; i < lives; i++) {
+    image(heartImage, 30 + i * 45, 70, 40, 40);
+  }
 }
 
 function finishGame() {
@@ -299,6 +417,47 @@ function resetGame() {
   elapsedTime = 0;
   obstacles = [];
   spawnCounter = 0;
+}
+
+// Desenha botão de Debug
+function drawDebugButton() {
+  // Posiciona o botão no canto inferior direito da tela
+  debugButtonX = width - debugButtonW - 20;
+  debugButtonY = height - debugButtonH - 20;
+
+  // Desenha retângulo do botão
+  fill(100, 150, 255);
+  stroke(50, 100, 200);
+  strokeWeight(2);
+  rect(debugButtonX, debugButtonY, debugButtonW, debugButtonH, 10);
+
+  // Desenha texto do botão
+  fill(255);
+  textAlign(CENTER, CENTER);
+  textSize(18);
+  text(
+    "START [DEBUG]",
+    debugButtonX + debugButtonW / 2,
+    debugButtonY + debugButtonH / 2,
+  );
+}
+
+// Verifica clique no botão de debug
+function mousePressed() {
+  if (gameState === "start" && debugMode) {
+    // Verifica se o clique foi dentro do botão
+    if (
+      mouseX > debugButtonX &&
+      mouseX < debugButtonX + debugButtonW &&
+      mouseY > debugButtonY &&
+      mouseY < debugButtonY + debugButtonH
+    ) {
+      gameState = "playing";
+      startTime = millis();
+      elapsedTime = 0;
+      return false; // Previne comportamento padrão
+    }
+  }
 }
 
 // Responsivo para redimensionamento de janela
