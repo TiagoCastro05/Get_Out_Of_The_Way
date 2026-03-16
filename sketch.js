@@ -1,32 +1,31 @@
-// PARTE 1: Webcam + HandPose (captura e deteccao)
-let video;
-let handposeModel;
-let predictions = [];
+// Adiciona PoseNet para detecção corporal
+let poseNet;
+let poses = [];
 
-// PARTE 2: Cursor controlado pela mao
-let player = {
-  x: 320,
-  y: 240,
-  radius: 30,
-  hasHand: false,
-};
-
-// PARTE 3: Logica de jogo (estado, score, tempo)
-let gameState = "loading"; // loading | ready | playing | finished
+// Altera o estado inicial do jogo
+let gameState = "start"; // start | loading | ready | playing | finished
 let score = 0;
 let bestScore = 0;
 let gameDuration = 60;
 let startTime = 0;
 let remainingTime = gameDuration;
+let lives = 3;
 
-// PARTE 4: Objetos aleatorios e colisoes
-let items = [];
+// Obstáculos e colisões
+let obstacles = [];
 let spawnCounter = 0;
-let spawnIntervalFrames = 22;
-let maxItems = 16;
+let spawnIntervalFrames = 60;
 
 let goodColor;
 let badColor;
+
+// Jogador
+let player = {
+  x: 480,
+  y: 270,
+  radius: 30,
+  hasHand: false,
+};
 
 function setup() {
   createCanvas(960, 540);
@@ -39,11 +38,29 @@ function setup() {
   goodColor = color(78, 226, 143);
   badColor = color(240, 88, 88);
 
+  // Inicializa PoseNet para detecção corporal
+  poseNet = ml5.poseNet(video, () => {
+    console.log("PoseNet pronto!");
+  });
+  poseNet.on("pose", function (results) {
+    poses = results;
+  });
+
   setupHandPose();
 }
 
 function draw() {
   drawMirroredVideo();
+
+  if (gameState === "start") {
+    drawStartScreen();
+    // Detecção de T-Pose para iniciar o jogo
+    if (detectTPose()) {
+      gameState = "loading";
+    }
+    return;
+  }
+
   updatePlayerFromHand();
 
   switch (gameState) {
@@ -69,6 +86,43 @@ function draw() {
   }
 }
 
+// Ecrã inicial com regras e instruções
+function drawStartScreen() {
+  fill(0);
+  textSize(40);
+  textAlign(CENTER);
+  text("Get out of the Way", width / 2, 80);
+  textSize(22);
+  textAlign(LEFT);
+  text("Regras:", 50, 140);
+  text("- Desvia-te dos obstáculos!", 50, 170);
+  text("- Aguenta o máximo possível!", 50, 200);
+  text("- Facas = Desviar/Bloquear (Dobrar braço)", 50, 230);
+  text("- Balas = Desviar", 50, 260);
+  text("- Saltar = Levantar Perna", 50, 290);
+  textSize(22);
+  textAlign(RIGHT);
+  text("Como iniciar o jogo:", width - 50, 140);
+  text("Levanta os braços (T-Pose)!", width - 50, 170);
+}
+
+// Detecção simples de T-Pose: ambos braços levantados
+function detectTPose() {
+  if (poses.length > 0) {
+    let pose = poses[0].pose;
+    let leftWrist = pose.leftWrist;
+    let rightWrist = pose.rightWrist;
+    let leftShoulder = pose.leftShoulder;
+    let rightShoulder = pose.rightShoulder;
+    // Verifica se ambos pulsos estão ao nível dos ombros (T-Pose)
+    if (leftWrist.y < leftShoulder.y && rightWrist.y < rightShoulder.y) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Funções adicionais para completar o jogo
 function setupHandPose() {
   handposeModel = ml5.handpose(video, () => {
     gameState = "ready";
@@ -91,14 +145,31 @@ function drawMirroredVideo() {
   rect(0, 0, width, height);
 }
 
+function drawOverlay(message) {
+  fill(0);
+  textSize(32);
+  textAlign(CENTER);
+  text(message, width / 2, height / 2);
+}
+
+function drawReadyScreen() {
+  fill(0);
+  textSize(32);
+  textAlign(CENTER);
+  text("Pronto! Clica para começar", width / 2, height / 2);
+}
+
+function drawPlayer() {
+  fill(255, 200, 0);
+  circle(player.x, player.y, player.radius * 2);
+}
+
 function updatePlayerFromHand() {
   if (predictions.length > 0) {
-    // Use index fingertip for direct and intuitive control.
     let indexTip = predictions[0].landmarks[8];
     let targetX = width - indexTip[0];
     let targetY = indexTip[1];
 
-    // Smooth movement to reduce jitter from camera noise.
     player.x = lerp(player.x, targetX, 0.35);
     player.y = lerp(player.y, targetY, 0.35);
     player.hasHand = true;
@@ -113,185 +184,143 @@ function updatePlayerFromHand() {
 function updateGame() {
   remainingTime = max(0, gameDuration - floor((millis() - startTime) / 1000));
 
-  if (remainingTime === 0) {
-    finishGame();
-    return;
-  }
-
+  // Spawn de obstáculos
   spawnCounter++;
-  if (spawnCounter >= spawnIntervalFrames) {
+  if (spawnCounter > spawnIntervalFrames) {
+    addObstacle();
     spawnCounter = 0;
-    if (items.length < maxItems) {
-      items.push(createRandomItem());
-    }
   }
 
-  for (let i = items.length - 1; i >= 0; i--) {
-    let item = items[i];
-    item.y += item.speed;
+  // Atualiza obstáculos
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    obstacles[i].update();
+    obstacles[i].display();
 
-    if (isColliding(player, item)) {
-      if (item.type === "good") {
-        score += 10;
-      } else {
-        score = max(0, score - 8);
-      }
-      items.splice(i, 1);
-      continue;
-    }
+    // Verifica colisão com jogador
+    if (obstacles[i].collidesWith(player)) {
+      lives--;
+      obstacles.splice(i, 1);
 
-    if (item.y - item.radius > height) {
-      if (item.type === "good") {
-        score = max(0, score - 2);
+      if (lives <= 0) {
+        finishGame();
       }
-      items.splice(i, 1);
+    } else if (obstacles[i].isOffScreen()) {
+      obstacles.splice(i, 1);
     }
+  }
+}
+
+function addObstacle() {
+  let type = random() > 0.5 ? "knife" : "bullet";
+  let fromTop = random() > 0.5;
+  let x, y, vx, vy;
+
+  if (fromTop) {
+    x = random(width);
+    y = -30;
+    vx = 0;
+    vy = random(2, 5);
+  } else {
+    x = width + 30;
+    y = random(height);
+    vx = -random(2, 5);
+    vy = 0;
+  }
+
+  obstacles.push(new Obstacle(x, y, vx, vy, type));
+}
+
+class Obstacle {
+  constructor(x, y, vx, vy, type) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.type = type;
+    this.size = 20;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+  }
+
+  display() {
+    if (this.type === "knife") {
+      fill(255, 100, 100);
+    } else {
+      fill(255, 200, 0);
+    }
+    circle(this.x, this.y, this.size);
+  }
+
+  collidesWith(player) {
+    let distance = dist(this.x, this.y, player.x, player.y);
+    return distance < this.size / 2 + player.radius;
+  }
+
+  isOffScreen() {
+    return (
+      this.x < -50 ||
+      this.x > width + 50 ||
+      this.y < -50 ||
+      this.y > height + 50
+    );
   }
 }
 
 function drawItems() {
-  for (let item of items) {
-    noStroke();
-    fill(item.type === "good" ? goodColor : badColor);
-    circle(item.x, item.y, item.radius * 2);
-
-    fill(18, 18, 18, 110);
-    textAlign(CENTER, CENTER);
-    textSize(14);
-    text(item.type === "good" ? "+" : "!", item.x, item.y + 1);
-  }
-}
-
-function drawPlayer() {
-  noFill();
-  strokeWeight(4);
-  stroke(player.hasHand ? color(255, 240, 120) : color(200, 200, 200));
-  circle(player.x, player.y, player.radius * 2);
-
-  noStroke();
-  fill(255, 245, 175, 200);
-  circle(player.x, player.y, player.radius * 0.6);
+  // Já feito dentro de updateGame
 }
 
 function drawHud() {
-  fill(15, 15, 15, 180);
-  noStroke();
-  rect(14, 14, 340, 110, 12);
-
   fill(255);
-  textAlign(LEFT, TOP);
-  textSize(22);
-  text("Get Out Of The Way", 26, 24);
-
-  textSize(18);
-  text("Pontos: " + score, 26, 56);
-  text("Tempo: " + remainingTime + "s", 140, 56);
-  text("Melhor: " + bestScore, 248, 56);
-
-  textSize(14);
-  text(player.hasHand ? "Mao detetada" : "Aponte a mao para a webcam", 26, 88);
-}
-
-function drawReadyScreen() {
-  drawOverlay("Treino Cognitivo e Motor");
-
-  fill(255);
-  textAlign(CENTER, CENTER);
-  textSize(28);
-  text(
-    "Use a ponta do dedo indicador para mexer o circulo.",
-    width / 2,
-    height / 2 - 40,
-  );
-
-  textSize(22);
-  text(
-    "Apanhe bolas verdes (+10) e evite bolas vermelhas (-8).",
-    width / 2,
-    height / 2,
-  );
-  text(
-    "Tem 60 segundos. Prima ESPACO para comecar.",
-    width / 2,
-    height / 2 + 42,
-  );
-
-  textSize(18);
-  text(
-    "Implementacao por partes: Webcam -> Mao -> Objetos -> Pontuacao/Tempo",
-    width / 2,
-    height / 2 + 80,
-  );
-}
-
-function drawFinishedScreen() {
-  fill(0, 180);
-  noStroke();
-  rect(0, 0, width, height);
-
-  fill(255);
-  textAlign(CENTER, CENTER);
-  textSize(44);
-  text("Tempo terminado!", width / 2, height / 2 - 80);
-
-  textSize(30);
-  text("Pontuacao final: " + score, width / 2, height / 2 - 20);
-  text("Melhor pontuacao: " + bestScore, width / 2, height / 2 + 20);
-
-  textSize(22);
-  text("Prima R para repetir", width / 2, height / 2 + 80);
-}
-
-function drawOverlay(label) {
-  fill(0, 160);
-  noStroke();
-  rect(0, 0, width, height);
-
-  fill(255);
-  textAlign(CENTER, CENTER);
-  textSize(36);
-  text(label, width / 2, height / 2 - 100);
-}
-
-function createRandomItem() {
-  // Controlled randomness: 70% good, 30% distractor.
-  let isGood = random() < 0.7;
-  return {
-    type: isGood ? "good" : "bad",
-    x: random(35, width - 35),
-    y: -20,
-    radius: random(16, 24),
-    speed: random(2.1, 4.1),
-  };
-}
-
-function isColliding(a, b) {
-  return dist(a.x, a.y, b.x, b.y) < a.radius + b.radius;
-}
-
-function startGame() {
-  gameState = "playing";
-  score = 0;
-  remainingTime = gameDuration;
-  items = [];
-  spawnCounter = 0;
-  startTime = millis();
+  textSize(24);
+  textAlign(LEFT);
+  text("Tempo: " + remainingTime + "s", 20, 30);
+  text("Vidas: " + lives, 20, 60);
+  text("Score: " + score, 20, 90);
 }
 
 function finishGame() {
   gameState = "finished";
-  bestScore = max(bestScore, score);
+  if (remainingTime > bestScore) {
+    bestScore = remainingTime;
+  }
 }
 
-function keyPressed() {
-  if (key === " " && gameState === "ready") {
-    if (!player.hasHand) {
-      return;
-    }
-    startGame();
-  }
+function drawFinishedScreen() {
+  fill(0, 0, 0, 200);
+  rect(0, 0, width, height);
 
-  if ((key === "r" || key === "R") && gameState === "finished") {
-    startGame();
+  fill(255);
+  textSize(40);
+  textAlign(CENTER);
+  text("Game Over!", width / 2, 150);
+
+  textSize(24);
+  text("Tempo: " + remainingTime + "s", width / 2, 250);
+  text("Melhor Tempo: " + bestScore + "s", width / 2, 300);
+  text("Clica para voltar ao início", width / 2, 400);
+
+  if (mouseIsPressed) {
+    resetGame();
+  }
+}
+
+function resetGame() {
+  gameState = "start";
+  score = 0;
+  lives = 3;
+  remainingTime = gameDuration;
+  obstacles = [];
+  spawnCounter = 0;
+}
+
+function mousePressed() {
+  if (gameState === "ready") {
+    gameState = "playing";
+    startTime = millis();
+    remainingTime = gameDuration;
   }
 }
