@@ -653,18 +653,24 @@ function updateTPoseSyncStart() {
 }
 
 function drawTPoseBar() {
+  push();
+  noStroke();
+
   let w = 320;
   let h = 14;
   let x = width / 2 - w / 2;
   let y = height - 30;
   let pct = constrain(tPoseHoldCounter / TPOSE_HOLD_FRAMES, 0, 1);
 
-  noStroke();
-  fill(25, 35, 45, 180);
+  // Fundo da barra
+  fill(25, 35, 45, 220);
   rect(x, y, w, h, 8);
 
-  fill(100, 230, 255, 210);
+  // Barra de progresso
+  fill(100, 230, 255, 240);
   rect(x, y, w * pct, h, 8);
+
+  pop();
 }
 
 // =============================================================
@@ -985,6 +991,14 @@ function checkCollision(ob) {
     }
   }
 
+  // TENTATIVA 3: Verificar colisão com o tronco (para obstáculos de lado)
+  if (ob.dir === "right" && ob.zone !== "legs") {
+    if (canTorsoBlock(kp, minX, maxX, minY, maxY)) {
+      // Tronco foi atingido!
+      return true;
+    }
+  }
+
   // FALLBACK: Verificar colisão com todo o corpo
   return hasBodyCollision(kp, minX, maxX, minY, maxY);
 }
@@ -1042,6 +1056,45 @@ function canLegBlock(kp, minX, maxX, minY, maxY) {
 }
 
 // Verificar colisão com corpo todo (se não conseguiu bloquear)
+// Verifica colisão com o tronco (linhas entre ombros-ancas)
+function canTorsoBlock(kp, minX, maxX, minY, maxY) {
+  const TORSO_CONF = 0.05;
+
+  let ls = kp[5],
+    rs = kp[6]; // Ombros
+  let lh = kp[11],
+    rh = kp[12]; // Ancas
+
+  // Verifica linhas do tronco
+  if (isVisible(ls, TORSO_CONF) && isVisible(lh, TORSO_CONF)) {
+    if (lineIntersectsRect(ls.x, ls.y, lh.x, lh.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(rs, TORSO_CONF) && isVisible(rh, TORSO_CONF)) {
+    if (lineIntersectsRect(rs.x, rs.y, rh.x, rh.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  // Linha horizontal entre ombros
+  if (isVisible(ls, TORSO_CONF) && isVisible(rs, TORSO_CONF)) {
+    if (lineIntersectsRect(ls.x, ls.y, rs.x, rs.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  // Linha horizontal entre ancas
+  if (isVisible(lh, TORSO_CONF) && isVisible(rh, TORSO_CONF)) {
+    if (lineIntersectsRect(lh.x, lh.y, rh.x, rh.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function hasBodyCollision(kp, minX, maxX, minY, maxY) {
   const BODY_CONF = 0.05; // MUITO baixo
 
