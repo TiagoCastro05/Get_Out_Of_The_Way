@@ -9,15 +9,6 @@ let video;
 let bodypose;
 let poses = [];
 
-// -- KEYPOINTS (formato 17 pontos usado pelo ml5/PoseNet) -----
-// 0=nose
-// 5=left_shoulder   6=right_shoulder
-// 7=left_elbow      8=right_elbow
-// 9=left_wrist     10=right_wrist
-// 11=left_hip      12=right_hip
-// 13=left_knee     14=right_knee
-// 15=left_ankle    16=right_ankle
-
 // -- ESTADO DO JOGO -------------------------------------------
 let gameState = "loading"; // loading | start | playing | dead
 
@@ -51,9 +42,6 @@ let spawnTimer = 0;
 let spawnInterval = 90;
 const MIN_SPAWN = 30;
 
-// -- DIFICULDADE ----------------------------------------------
-let difficultyLevel = 1;
-
 // -- COOLDOWN DE HIT ------------------------------------------
 let hitCooldown = 0;
 const HIT_COOLDOWN_FRAMES = 60;
@@ -80,7 +68,6 @@ let soundBackground;
 let soundBlockade;
 let soundDamage;
 let soundGameOver;
-let backgroundSoundPlaying = false;
 
 // =============================================================
 //  HELPERS GERAIS
@@ -383,7 +370,6 @@ function draw() {
       !soundBackground.isPlaying()
     ) {
       soundBackground.loop();
-      backgroundSoundPlaying = true;
     }
   }
 
@@ -601,111 +587,6 @@ function drawStartScreen() {
   drawPositioningBar();
 
   drawTPoseBar();
-}
-
-function drawRuleExampleRow(x, y, w, h, objType, shieldOk) {
-  // Função obsoleta - preservada para compatibilidade
-  fill(24, 40, 58, 230);
-  noStroke();
-  rect(x, y, w, h, 10);
-
-  let iconX = shieldOk === null ? x + w * 0.5 : x + w * 0.5 - 24;
-  let iconY = y + h * 0.5;
-
-  drawRuleObjectIcon(iconX, iconY, objType);
-
-  if (shieldOk !== null) {
-    drawShieldBadge(x + w * 0.5 + 24, iconY, shieldOk);
-  }
-}
-
-function drawRuleObjectIcon(cx, cy, objType) {
-  push();
-  translate(cx, cy);
-
-  if (objType === "bullet") {
-    if (imgBullet) {
-      imageMode(CENTER);
-      image(imgBullet, 0, 0, 56, 56);
-    } else {
-      noStroke();
-      fill(255, 215, 0);
-      circle(0, 0, 26);
-    }
-  } else if (objType === "leg-up") {
-    drawLegRaiseIcon(0, 0);
-  } else {
-    let knifeSize = 58;
-    rotate(HALF_PI + PI);
-
-    if (imgKnife) {
-      imageMode(CENTER);
-      image(imgKnife, 0, 0, knifeSize, knifeSize);
-    } else {
-      fill(220, 210, 180);
-      noStroke();
-      rect(-3, -18, 6, 26, 2);
-      fill(120, 70, 30);
-      rect(-4, 8, 8, 12, 2);
-    }
-  }
-
-  pop();
-}
-
-function drawLegRaiseIcon(cx, cy) {
-  push();
-  translate(cx, cy);
-  stroke(180, 230, 250);
-  strokeWeight(3);
-  strokeCap(ROUND);
-  noFill();
-
-  circle(0, -20, 12);
-  line(0, -13, 0, 14);
-
-  line(0, -2, -16, 4);
-  line(0, -2, 16, 4);
-
-  line(0, 14, 0, 34);
-  line(0, 14, 18, 4);
-
-  stroke(255, 210, 90);
-  line(18, 2, 18, -12);
-  line(18, -12, 13, -7);
-  line(18, -12, 23, -7);
-
-  pop();
-}
-
-function drawStartPoseIcon(cx, cy, size) {
-  push();
-  translate(cx, cy);
-  stroke(180, 240, 255, 230);
-  strokeWeight(4);
-  strokeCap(ROUND);
-  noFill();
-
-  let headR = size * 0.11;
-  let torsoH = size * 0.33;
-  let armLen = size * 0.34;
-  let legLen = size * 0.24;
-
-  circle(0, -torsoH * 0.86, headR * 2);
-  line(0, -torsoH * 0.7, 0, torsoH * 0.2);
-
-  // A-POSE: braços levantados em ângulo ~45º
-  let armAngle = radians(45);
-  let armX = armLen * sin(armAngle);
-  let armY = -armLen * cos(armAngle);
-
-  line(0, -torsoH * 0.45, -armX, -torsoH * 0.45 + armY);
-  line(0, -torsoH * 0.45, armX, -torsoH * 0.45 + armY);
-
-  line(0, torsoH * 0.2, -legLen * 0.55, torsoH * 0.2 + legLen);
-  line(0, torsoH * 0.2, legLen * 0.55, torsoH * 0.2 + legLen);
-
-  pop();
 }
 
 function drawShieldBadge(cx, cy, isSuccess) {
@@ -935,7 +816,7 @@ function updatePlaying() {
   elapsedTime = (millis() - startTime) / 1000;
 
   let difficultyProgress = constrain(elapsedTime / 90, 0, 1);
-  difficultyLevel = 1 + floor(elapsedTime / 20);
+
   spawnInterval = round(lerp(130, 34, difficultyProgress));
   spawnInterval = max(MIN_SPAWN, spawnInterval);
 
@@ -1554,7 +1435,7 @@ function hasBodyCollision(kp, minX, maxX, minY, maxY) {
 }
 
 // =============================================================
-//  ESQUELETO - REFAZIDO DO ZERO
+//  ESQUELETO
 // =============================================================
 // Renderiza apenas o esqueleto básico com thresholds adequados
 
@@ -1753,22 +1634,6 @@ function drawHUD() {
       circle(x, y, 26);
     }
   }
-
-  // Indicador de esqueleto visível
-  fill(showSkeleton ? color(100, 230, 255) : color(100, 100, 120));
-  noStroke();
-  circle(width - 40, 110, 12);
-
-  fill(COL_TEXT);
-  textAlign(RIGHT, TOP);
-  textSize(11);
-  text(showSkeleton ? "SKELETON ON" : "skeleton off", width - 60, 107);
-
-  if (hitCooldown > 0 && hitCooldown % 10 < 5) {
-    fill(220, 0, 0, 60);
-    noStroke();
-    rect(0, 0, width, height);
-  }
 }
 
 // =============================================================
@@ -1837,7 +1702,6 @@ function startGame() {
   obstacles = [];
   spawnTimer = 0;
   hitCooldown = 0;
-  difficultyLevel = 1;
   startTime = millis();
   elapsedTime = 0;
 
@@ -1850,7 +1714,6 @@ function startGame() {
   if (soundBackground && soundBackground.isLoaded()) {
     if (!soundBackground.isPlaying()) {
       soundBackground.loop();
-      backgroundSoundPlaying = true;
     }
   }
 }
@@ -1865,7 +1728,6 @@ function endGame() {
   if (soundBackground && soundBackground.isPlaying()) {
     soundBackground.stop();
   }
-  backgroundSoundPlaying = false;
 
   if (soundGameOver && soundGameOver.isLoaded()) {
     soundGameOver.play();
@@ -1910,7 +1772,6 @@ function keyPressed() {
       !soundBackground.isPlaying()
     ) {
       soundBackground.loop();
-      backgroundSoundPlaying = true;
     }
   }
 
