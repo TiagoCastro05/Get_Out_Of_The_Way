@@ -317,7 +317,8 @@ function drawStartScreen() {
   let rightX = width - margin - rightW;
   let rightY = topY;
 
-  fill(COL_TEXT);
+  noStroke();
+
   textAlign(CENTER, TOP);
   textSize(28);
   text("GET OUT OF THE WAY", width / 2, 24);
@@ -326,8 +327,8 @@ function drawStartScreen() {
   fill(12, 22, 34, 215);
   rect(leftX, leftY, leftW, panelH, 14);
 
-  fill(255, 255, 200);
-  textSize(16);
+  fill(170, 220, 245);
+  textSize(25);
   textAlign(LEFT, TOP);
   text("BLOQUEAR COM:", leftX + 16, leftY + 12);
 
@@ -338,9 +339,9 @@ function drawStartScreen() {
   rect(leftX + 12, leftY + 40, leftW - 24, armBoxH, 8);
 
   fill(COL_TEXT);
-  textSize(11);
+  textSize(20);
   textAlign(CENTER, TOP);
-  text("Braço", leftX + leftW / 2, leftY + 46);
+  text("Braço", leftX + leftW / 2, leftY + 40);
 
   if (imgBlockArmKnife) {
     push();
@@ -362,7 +363,7 @@ function drawStartScreen() {
   rect(leftX + 12, legBoxY, leftW - 24, armBoxH, 8);
 
   fill(COL_TEXT);
-  textSize(11);
+  textSize(20);
   textAlign(CENTER, TOP);
   text("Perna", leftX + leftW / 2, legBoxY + 6);
 
@@ -372,8 +373,8 @@ function drawStartScreen() {
     image(
       imgBlockLegKnife,
       leftX + leftW / 2,
-      legBoxY + armBoxH / 2 + 4,
-      100,
+      legBoxY + armBoxH / 2 + 15,
+      90,
       90,
     );
     pop();
@@ -389,7 +390,7 @@ function drawStartScreen() {
   let iconY = bulletBoxY + armBoxH / 2;
 
   fill(COL_TEXT);
-  textSize(11);
+  textSize(20);
   textAlign(CENTER, TOP);
   text("Bala", leftX + leftW / 2, bulletBoxY + 6);
 
@@ -413,7 +414,7 @@ function drawStartScreen() {
   rect(rightX, rightY, rightW, panelH, 14);
 
   fill(170, 220, 245);
-  textSize(35);
+  textSize(25);
   textAlign(LEFT, TOP);
   text("OBJETIVO", rightX + 14, rightY + 14);
 
@@ -438,7 +439,6 @@ function drawStartScreen() {
   textAlign(LEFT, TOP);
   text("1. Levanta os bra\u00e7os 30º/45º", rightX + 14, rightY + 165);
   text("2. Espera a barra encher", rightX + 14, rightY + 185);
-
 
   // Imagem pose inicial
   if (imgPoseInicial) {
