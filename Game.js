@@ -453,6 +453,9 @@ function drawStartScreen() {
   textAlign(CENTER, TOP);
   text("Ou prima ESPAÇO", rightX + rightW / 2, rightY + panelH - 60);
 
+  // Barra de posicionamento ideal
+  drawPositioningBar();
+
   drawTPoseBar();
 }
 
@@ -669,6 +672,38 @@ function drawTPoseBar() {
   // Barra de progresso
   fill(100, 230, 255, 240);
   rect(x, y, w * pct, h, 8);
+
+  pop();
+}
+
+// Barra horizontal indicando a área ideal para o jogador
+function drawPositioningBar() {
+  push();
+  noStroke();
+
+  let barHeight = 16;
+  let barY = height - 670; // Mais embaixo
+  let barWidth = width * 0.3;
+  let barX = (width - barWidth) / 2;
+
+  // Fundo semi-transparente escuro
+  fill(25, 35, 45, 180);
+  rect(barX - 2, barY - 2, barWidth + 4, barHeight + 4, 8);
+
+  // Barra principal amarela/dourada
+  fill(255, 220, 80, 200);
+  rect(barX, barY, barWidth, barHeight, 8);
+
+  // Highlight no topo
+  fill(255, 240, 120, 140);
+  rect(barX + 2, barY + 1, barWidth - 4, barHeight * 0.3, 6);
+
+  // Texto indicativo (menor)
+  fill(25, 35, 45, 220);
+  textAlign(CENTER, CENTER);
+  textSize(13);
+  textStyle(BOLD);
+  text("Posiciona-te abaixo da barra", width / 2, barY + barHeight / 2);
 
   pop();
 }
