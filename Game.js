@@ -61,6 +61,11 @@ const HIT_COOLDOWN_FRAMES = 60;
 // -- CORES ----------------------------------------------------
 let COL_KNIFE, COL_BULLET, COL_HIT, COL_TEXT;
 
+// -- ESQUELETO (visibilidade opcional) ----------------------
+let showSkeleton = false; // Por padrão, invisível
+let skeletonToggleCooldown = 0;
+const SKELETON_TOGGLE_COOLDOWN = 30; // frames entre toggles
+
 // -- IMAGENS --------------------------------------------------
 let imgKnife;
 let imgBullet;
@@ -368,6 +373,7 @@ function draw() {
   drawMirroredVideo();
 
   if (hitCooldown > 0) hitCooldown--;
+  if (skeletonToggleCooldown > 0) skeletonToggleCooldown--;
 
   // Controla música de fundo no ecrã inicial
   if (gameState === "start") {
@@ -378,6 +384,14 @@ function draw() {
     ) {
       soundBackground.loop();
       backgroundSoundPlaying = true;
+    }
+  }
+
+  // Detecta gesto para toggle do esqueleto (duas mãos acima da cabeça)
+  if (skeletonToggleCooldown <= 0) {
+    if (isSkeletonToggleGesture()) {
+      showSkeleton = !showSkeleton;
+      skeletonToggleCooldown = SKELETON_TOGGLE_COOLDOWN;
     }
   }
 
@@ -777,7 +791,7 @@ function drawPositioningBar() {
   noStroke();
 
   let barHeight = 16;
-  let barY = height - 675; // Mais embaixo
+  let barY = height - 705; // Mais embaixo
   let barWidth = width * 0.3;
   let barX = (width - barWidth) / 2;
 
@@ -801,6 +815,58 @@ function drawPositioningBar() {
   text("Posiciona-te abaixo da barra", width / 2, barY + barHeight / 2);
 
   pop();
+}
+
+// =============================================================
+//  SKELETON VISIBILITY TOGGLE
+// =============================================================
+// Detecta gesto para ativar/desativar visibilidade do esqueleto
+// Gesto: Duas mãos acima da cabeça (levantar os braços verticalmente)
+
+function isSkeletonToggleGesture() {
+  if (poses.length === 0) return false;
+
+  let kp = poses[0].keypoints;
+  if (!kp || kp.length < 17) return false;
+
+  // Verificar visibilidade dos pontos críticos
+  const GESTURE_CONF = 0.2; // Um pouco mais alto que collision (movimento intencional)
+  let ls = kp[5],
+    rs = kp[6]; // Ombros
+  let lw = kp[9],
+    rw = kp[10]; // Pulsos
+  let nose = kp[0];
+
+  if (
+    !isVisible(ls, GESTURE_CONF) ||
+    !isVisible(rs, GESTURE_CONF) ||
+    !isVisible(lw, GESTURE_CONF) ||
+    !isVisible(rw, GESTURE_CONF) ||
+    !isVisible(nose, GESTURE_CONF)
+  ) {
+    return false;
+  }
+
+  // Gesto: Ambos os pulsos ACIMA da cabeça
+  let bothWristsAboveHead = lw.y < nose.y - 50 && rw.y < nose.y - 50;
+
+  // Gesto: Ambos os pulsos longe dos ombros (braços abertos)
+  let leftWristDistance = abs(lw.x - ls.x);
+  let rightWristDistance = abs(rw.x - rs.x);
+  const MIN_ARM_DISTANCE = 60;
+  let armsOpen =
+    leftWristDistance > MIN_ARM_DISTANCE &&
+    rightWristDistance > MIN_ARM_DISTANCE;
+
+  // Corpo ereto (ombros acima das ancas)
+  let bodyErect = true;
+  if (kp[11] && kp[12]) {
+    let hipMidY = (kp[11].y + kp[12].y) * 0.5;
+    let shoulderMidY = (ls.y + rs.y) * 0.5;
+    bodyErect = hipMidY > shoulderMidY + 50;
+  }
+
+  return bothWristsAboveHead && armsOpen && bodyErect;
 }
 
 // =============================================================
@@ -1410,49 +1476,52 @@ function drawSkeleton() {
   let kp = getSmoothedKeypoints();
   if (!kp || kp.length < 17) return;
 
-  stroke(120, 230, 255, 210);
-  strokeWeight(5);
-  strokeCap(ROUND);
+  // Só desenha se visibilidade ativa, mas mantém suavização sempre ativa
+  if (showSkeleton) {
+    stroke(120, 230, 255, 210);
+    strokeWeight(5);
+    strokeCap(ROUND);
 
-  // Torso (pode ter confiança baixa quando corpo está longe)
-  drawLimb(kp[5], kp[6], 0.05); // Ombro esq -> Ombro dir
-  drawLimb(kp[5], kp[11], 0.05); // Ombro esq -> Anca esq
-  drawLimb(kp[6], kp[12], 0.05); // Ombro dir -> Anca dir
-  drawLimb(kp[11], kp[12], 0.05); // Anca esq -> Anca dir
+    // Torso (pode ter confiança baixa quando corpo está longe)
+    drawLimb(kp[5], kp[6], 0.05); // Ombro esq -> Ombro dir
+    drawLimb(kp[5], kp[11], 0.05); // Ombro esq -> Anca esq
+    drawLimb(kp[6], kp[12], 0.05); // Ombro dir -> Anca dir
+    drawLimb(kp[11], kp[12], 0.05); // Anca esq -> Anca dir
 
-  // Cabeça
-  drawLimb(kp[0], kp[5], 0.05); // Nariz -> Ombro esq
-  drawLimb(kp[0], kp[6], 0.05); // Nariz -> Ombro dir
+    // Cabeça
+    drawLimb(kp[0], kp[5], 0.05); // Nariz -> Ombro esq
+    drawLimb(kp[0], kp[6], 0.05); // Nariz -> Ombro dir
 
-  // Braços (muito baixo - podem ter confiance quase 0 longe)
-  drawLimb(kp[5], kp[7], 0.02); // Ombro esq -> Cotovelo esq
-  drawLimb(kp[7], kp[9], 0.02); // Cotovelo esq -> Pulso esq
-  drawLimb(kp[6], kp[8], 0.02); // Ombro dir -> Cotovelo dir
-  drawLimb(kp[8], kp[10], 0.02); // Cotovelo dir -> Pulso dir
+    // Braços (muito baixo - podem ter confiance quase 0 longe)
+    drawLimb(kp[5], kp[7], 0.02); // Ombro esq -> Cotovelo esq
+    drawLimb(kp[7], kp[9], 0.02); // Cotovelo esq -> Pulso esq
+    drawLimb(kp[6], kp[8], 0.02); // Ombro dir -> Cotovelo dir
+    drawLimb(kp[8], kp[10], 0.02); // Cotovelo dir -> Pulso dir
 
-  // Pernas (baixo mas um pouco mais alto que braços)
-  drawLimb(kp[11], kp[13], 0.05); // Anca esq -> Joelho esq
-  drawLimb(kp[13], kp[15], 0.05); // Joelho esq -> Tornozelo esq
-  drawLimb(kp[12], kp[14], 0.05); // Anca dir -> Joelho dir
-  drawLimb(kp[14], kp[16], 0.05); // Joelho dir -> Tornozelo dir
+    // Pernas (baixo mas um pouco mais alto que braços)
+    drawLimb(kp[11], kp[13], 0.05); // Anca esq -> Joelho esq
+    drawLimb(kp[13], kp[15], 0.05); // Joelho esq -> Tornozelo esq
+    drawLimb(kp[12], kp[14], 0.05); // Anca dir -> Joelho dir
+    drawLimb(kp[14], kp[16], 0.05); // Joelho dir -> Tornozelo dir
 
-  // Desenhar junções (pontos)
-  drawJoint(kp[0], 0.05); // Nariz
-  drawJoint(kp[5], 0.05); // Ombro esq
-  drawJoint(kp[6], 0.05); // Ombro dir
-  drawJoint(kp[7], 0.02); // Cotovelo esq
-  drawJoint(kp[8], 0.02); // Cotovelo dir
-  drawJoint(kp[9], 0.02); // Pulso esq
-  drawJoint(kp[10], 0.02); // Pulso dir
-  drawJoint(kp[11], 0.05); // Anca esq
-  drawJoint(kp[12], 0.05); // Anca dir
-  drawJoint(kp[13], 0.05); // Joelho esq
-  drawJoint(kp[14], 0.05); // Joelho dir
-  drawJoint(kp[15], 0.05); // Tornozelo esq
-  drawJoint(kp[16], 0.05); // Tornozelo dir
+    // Desenhar junções (pontos)
+    drawJoint(kp[0], 0.05); // Nariz
+    drawJoint(kp[5], 0.05); // Ombro esq
+    drawJoint(kp[6], 0.05); // Ombro dir
+    drawJoint(kp[7], 0.02); // Cotovelo esq
+    drawJoint(kp[8], 0.02); // Cotovelo dir
+    drawJoint(kp[9], 0.02); // Pulso esq
+    drawJoint(kp[10], 0.02); // Pulso dir
+    drawJoint(kp[11], 0.05); // Anca esq
+    drawJoint(kp[12], 0.05); // Anca dir
+    drawJoint(kp[13], 0.05); // Joelho esq
+    drawJoint(kp[14], 0.05); // Joelho dir
+    drawJoint(kp[15], 0.05); // Tornozelo esq
+    drawJoint(kp[16], 0.05); // Tornozelo dir
 
-  // Contorno facial
-  drawFaceContour(kp);
+    // Contorno facial
+    drawFaceContour(kp);
+  }
 }
 
 // Desenha linha entre dois keypoints
@@ -1595,6 +1664,16 @@ function drawHUD() {
       circle(x, y, 26);
     }
   }
+
+  // Indicador de esqueleto visível
+  fill(showSkeleton ? color(100, 230, 255) : color(100, 100, 120));
+  noStroke();
+  circle(width - 40, 110, 12);
+
+  fill(COL_TEXT);
+  textAlign(RIGHT, TOP);
+  textSize(11);
+  text(showSkeleton ? "SKELETON ON" : "skeleton off", width - 60, 107);
 
   if (hitCooldown > 0 && hitCooldown % 10 < 5) {
     fill(220, 0, 0, 60);
@@ -1740,5 +1819,11 @@ function keyPressed() {
       soundBackground.loop();
       backgroundSoundPlaying = true;
     }
+  }
+
+  // Toggle esqueleto com tecla 'S'
+  if ((key === "s" || key === "S") && skeletonToggleCooldown <= 0) {
+    showSkeleton = !showSkeleton;
+    skeletonToggleCooldown = SKELETON_TOGGLE_COOLDOWN;
   }
 }
