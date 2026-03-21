@@ -70,6 +70,13 @@ let imgBlockArmKnife;
 let imgBlockLegKnife;
 let imgPoseInicial;
 
+// -- AUDIO ----------------------------------------------------
+let soundBackground;
+let soundBlockade;
+let soundDamage;
+let soundGameOver;
+let backgroundSoundPlaying = false;
+
 // =============================================================
 //  HELPERS GERAIS
 // =============================================================
@@ -175,6 +182,43 @@ function preload() {
       imgPoseInicial = null;
     },
   );
+
+  // Carrega áudio
+  soundBackground = loadSound(
+    "Audio/BackGround.mp3",
+    () => {},
+    () => {
+      console.warn("Não foi possível carregar áudio de fundo");
+      soundBackground = null;
+    },
+  );
+
+  soundBlockade = loadSound(
+    "Audio/Bloqueio.mp3",
+    () => {},
+    () => {
+      console.warn("Não foi possível carregar som de bloqueio");
+      soundBlockade = null;
+    },
+  );
+
+  soundDamage = loadSound(
+    "Audio/Dano.mp3",
+    () => {},
+    () => {
+      console.warn("Não foi possível carregar som de dano");
+      soundDamage = null;
+    },
+  );
+
+  soundGameOver = loadSound(
+    "Audio/GameOver.mp3",
+    () => {},
+    () => {
+      console.warn("Não foi possível carregar som de game over");
+      soundGameOver = null;
+    },
+  );
 }
 
 // =============================================================
@@ -251,6 +295,18 @@ function draw() {
   drawMirroredVideo();
 
   if (hitCooldown > 0) hitCooldown--;
+
+  // Controla música de fundo no ecrã inicial
+  if (gameState === "start") {
+    if (
+      soundBackground &&
+      soundBackground.isLoaded() &&
+      !soundBackground.isPlaying()
+    ) {
+      soundBackground.loop();
+      backgroundSoundPlaying = true;
+    }
+  }
 
   switch (gameState) {
     case "loading":
@@ -564,7 +620,6 @@ function drawStartPoseIcon(cx, cy, size) {
   pop();
 }
 
-
 function drawShieldBadge(cx, cy, isSuccess) {
   push();
   translate(cx, cy);
@@ -855,6 +910,9 @@ function updateObstacles() {
 
       if (collisionResult === "blocked") {
         // Obst\u00e1culo foi bloqueado com sucesso! Remove sem causar dano
+        if (soundBlockade && soundBlockade.isLoaded()) {
+          soundBlockade.play();
+        }
         obstacles.splice(i, 1);
         continue;
       } else if (collisionResult === true) {
@@ -1536,6 +1594,19 @@ function startGame() {
   difficultyLevel = 1;
   startTime = millis();
   elapsedTime = 0;
+
+  // Para o som de game over se estiver a tocar
+  if (soundGameOver && soundGameOver.isPlaying()) {
+    soundGameOver.stop();
+  }
+
+  // Toca a música de fundo
+  if (soundBackground && soundBackground.isLoaded()) {
+    if (!soundBackground.isPlaying()) {
+      soundBackground.loop();
+      backgroundSoundPlaying = true;
+    }
+  }
 }
 
 function endGame() {
@@ -1543,11 +1614,26 @@ function endGame() {
   if (elapsedTime > recordTime) {
     recordTime = elapsedTime;
   }
+
+  // Para a música de fundo e toca o som de game over
+  if (soundBackground && soundBackground.isPlaying()) {
+    soundBackground.stop();
+  }
+  backgroundSoundPlaying = false;
+
+  if (soundGameOver && soundGameOver.isLoaded()) {
+    soundGameOver.play();
+  }
 }
 
 function loseLife() {
   lives = max(0, lives - 1);
   hitCooldown = HIT_COOLDOWN_FRAMES;
+
+  // Toca som de dano
+  if (soundDamage && soundDamage.isLoaded()) {
+    soundDamage.play();
+  }
 
   if (lives <= 0) {
     endGame();
@@ -1567,5 +1653,18 @@ function keyPressed() {
   if ((key === "i" || key === "I") && gameState === "dead") {
     gameState = "start";
     tPoseHoldCounter = 0;
+
+    // Para o som de game over e volta a tocar a música de fundo
+    if (soundGameOver && soundGameOver.isPlaying()) {
+      soundGameOver.stop();
+    }
+    if (
+      soundBackground &&
+      soundBackground.isLoaded() &&
+      !soundBackground.isPlaying()
+    ) {
+      soundBackground.loop();
+      backgroundSoundPlaying = true;
+    }
   }
 }
