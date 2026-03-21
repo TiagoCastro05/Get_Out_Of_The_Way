@@ -97,6 +97,79 @@ function isVisible(p, minConfidence = 0.2) {
   );
 }
 
+// Retorna keypoints suavizados usando histórico (para desenho do esqueleto)
+// Usa MEDIANA em vez de média para ser resistente a outliers
+function getSmoothedKeypoints() {
+  if (keypointHistory.length === 0 || poses.length === 0) {
+    return poses.length > 0 ? poses[0].keypoints : [];
+  }
+
+  let smoothed = [];
+  let framesToUse = min(12, keypointHistory.length); // Usa últimos 12 frames
+
+  for (let i = 0; i < 17; i++) {
+    let xValues = [];
+    let yValues = [];
+    let confValues = [];
+
+    // Percorre os frames do histórico
+    for (
+      let f = keypointHistory.length - framesToUse;
+      f < keypointHistory.length;
+      f++
+    ) {
+      let kp = keypointHistory[f][i];
+      if (kp && Number.isFinite(kp.x) && Number.isFinite(kp.y)) {
+        xValues.push(kp.x);
+        yValues.push(kp.y);
+        confValues.push(kp.confidence || 0);
+      }
+    }
+
+    // Adiciona o frame atual
+    if (poses.length > 0 && poses[0].keypoints[i]) {
+      let kp = poses[0].keypoints[i];
+      if (Number.isFinite(kp.x) && Number.isFinite(kp.y)) {
+        xValues.push(kp.x);
+        yValues.push(kp.y);
+        confValues.push(kp.confidence || 0);
+      }
+    }
+
+    if (xValues.length > 0) {
+      // Usa mediana para X e Y (muito mais estável que média)
+      let medianX = getMedian(xValues);
+      let medianY = getMedian(yValues);
+      let avgConf = confValues.reduce((a, b) => a + b, 0) / confValues.length;
+
+      smoothed.push({
+        x: medianX,
+        y: medianY,
+        confidence: avgConf,
+      });
+    } else {
+      smoothed.push({
+        x: 0,
+        y: 0,
+        confidence: 0,
+      });
+    }
+  }
+
+  return smoothed;
+}
+
+// Calcula a mediana de um array de números
+function getMedian(values) {
+  if (values.length === 0) return 0;
+  values.sort((a, b) => a - b);
+  let mid = floor(values.length / 2);
+  if (values.length % 2 === 0) {
+    return (values[mid - 1] + values[mid]) / 2;
+  }
+  return values[mid];
+}
+
 function pointInRect(px, py, minX, minY, maxX, maxY) {
   return px >= minX && px <= maxX && py >= minY && py <= maxY;
 }
@@ -1333,7 +1406,8 @@ function hasBodyCollision(kp, minX, maxX, minY, maxY) {
 function drawSkeleton() {
   if (poses.length === 0) return;
 
-  let kp = poses[0].keypoints;
+  // Usa keypoints suavizados para desenho (mais estável)
+  let kp = getSmoothedKeypoints();
   if (!kp || kp.length < 17) return;
 
   stroke(120, 230, 255, 210);
