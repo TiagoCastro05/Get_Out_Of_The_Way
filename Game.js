@@ -7,7 +7,7 @@
 // -- WEBCAM & POSE MODEL --------------------------------------
 let video;
 let bodypose;
-let poses = []; // array de poses detetadas pelo ml5
+let poses = [];
 
 // -- KEYPOINTS (formato 17 pontos usado pelo ml5/PoseNet) -----
 // 0=nose
@@ -21,23 +21,19 @@ let poses = []; // array de poses detetadas pelo ml5
 // -- ESTADO DO JOGO -------------------------------------------
 let gameState = "loading"; // loading | start | playing | dead
 
-// -- SINCRONIZACAO T-POSE (inicio sem teclado) ----------------
+// -- T-POSE ---------------------------------------------------
 const TPOSE_HOLD_FRAMES = 42;
 let tPoseHoldCounter = 0;
 
-const TOP_WARNING_FRAMES = 38;
+// -- TRACKING -------------------------------------------------
 const TRACKED_POINT_HOLD = 35;
 let trackedKeypoints = Array.from({ length: 17 }, () => null);
 
 const FACE_CONTOUR_HOLD = 12;
 let lastFaceContour = null;
 
-function getScreenZones() {
-  return {
-    headMaxY: height / 3,
-    torsoMaxY: (height / 3) * 2,
-  };
-}
+// -- ALERTAS --------------------------------------------------
+const TOP_WARNING_FRAMES = 38;
 
 // -- TEMPO E RECORDES -----------------------------------------
 let startTime = 0;
@@ -70,6 +66,55 @@ let imgBullet;
 let imgHeart;
 let imgShield;
 
+// =============================================================
+//  HELPERS GERAIS
+// =============================================================
+function getScreenZones() {
+  return {
+    headMaxY: height / 3,
+    torsoMaxY: (height / 3) * 2,
+  };
+}
+
+function isVisible(p, minConfidence = 0.2) {
+  return (
+    p &&
+    Number.isFinite(p.x) &&
+    Number.isFinite(p.y) &&
+    Number.isFinite(p.confidence) &&
+    p.confidence > minConfidence
+  );
+}
+
+function pointInRect(px, py, minX, minY, maxX, maxY) {
+  return px >= minX && px <= maxX && py >= minY && py <= maxY;
+}
+
+function segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+  let den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (abs(den) < 1e-6) return false;
+
+  let t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+  let u = ((x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2)) / den;
+
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+function lineIntersectsRect(x1, y1, x2, y2, minX, minY, maxX, maxY) {
+  if (pointInRect(x1, y1, minX, minY, maxX, maxY)) return true;
+  if (pointInRect(x2, y2, minX, minY, maxX, maxY)) return true;
+
+  return (
+    segmentsIntersect(x1, y1, x2, y2, minX, minY, maxX, minY) ||
+    segmentsIntersect(x1, y1, x2, y2, maxX, minY, maxX, maxY) ||
+    segmentsIntersect(x1, y1, x2, y2, maxX, maxY, minX, maxY) ||
+    segmentsIntersect(x1, y1, x2, y2, minX, maxY, minX, minY)
+  );
+}
+
+// =============================================================
+//  PRELOAD
+// =============================================================
 function preload() {
   imgKnife = loadImage("Imagens/Knife.png", () => {}, () => {
     imgKnife = null;
@@ -239,9 +284,9 @@ function drawStartScreen() {
 
   let rowY = leftY + 24;
   let rowH = 108;
-  drawRuleExampleRow(leftX + 10, rowY, leftW - 20, rowH, "knife", true, "", "");
-  drawRuleExampleRow(leftX + 10, rowY + rowH + 10, leftW - 20, rowH, "bullet", false, "", "");
-  drawRuleExampleRow(leftX + 10, rowY + (rowH + 10) * 2, leftW - 20, rowH, "leg-up", null, "", "");
+  drawRuleExampleRow(leftX + 10, rowY, leftW - 20, rowH, "knife", true);
+  drawRuleExampleRow(leftX + 10, rowY + rowH + 10, leftW - 20, rowH, "bullet", false);
+  drawRuleExampleRow(leftX + 10, rowY + (rowH + 10) * 2, leftW - 20, rowH, "leg-up", null);
 
   fill(14, 28, 42, 215);
   rect(rightX, rightY, rightW, panelH, 14);
@@ -271,7 +316,7 @@ function drawStartScreen() {
   drawTPoseBar();
 }
 
-function drawRuleExampleRow(x, y, w, h, objType, shieldOk, title, resultText) {
+function drawRuleExampleRow(x, y, w, h, objType, shieldOk) {
   fill(24, 40, 58, 230);
   noStroke();
   rect(x, y, w, h, 10);
@@ -283,18 +328,6 @@ function drawRuleExampleRow(x, y, w, h, objType, shieldOk, title, resultText) {
 
   if (shieldOk !== null) {
     drawShieldBadge(x + w * 0.5 + 24, iconY, shieldOk);
-  }
-
-  if (title || resultText) {
-    fill(230, 240, 248);
-    textAlign(LEFT, TOP);
-    textSize(16);
-    let textX = shieldOk !== null ? x + 120 : x + 88;
-    text(title, textX, y + 18);
-
-    textSize(14);
-    fill(180, 220, 240);
-    text(resultText, textX, y + 46);
   }
 }
 
@@ -417,6 +450,9 @@ function drawShieldBadge(cx, cy, isSuccess) {
   pop();
 }
 
+// =============================================================
+//  T-POSE
+// =============================================================
 function updateTPoseSyncStart() {
   if (poses.length === 0) {
     tPoseHoldCounter = max(0, tPoseHoldCounter - 2);
@@ -451,9 +487,6 @@ function drawTPoseBar() {
   rect(x, y, w * pct, h, 8);
 }
 
-// =============================================================
-//  T-POSE
-// =============================================================
 function isTPose(kp) {
   let ls = kp[5], rs = kp[6];
   let le = kp[7], re = kp[8];
@@ -712,23 +745,6 @@ function drawTopWarning(ob) {
   }
 }
 
-function drawZoneGuides() {
-  let zones = getScreenZones();
-
-  stroke(255, 255, 255, 55);
-  strokeWeight(1);
-  line(0, zones.headMaxY, width, zones.headMaxY);
-  line(0, zones.torsoMaxY, width, zones.torsoMaxY);
-
-  noStroke();
-  textAlign(LEFT, TOP);
-  textSize(13);
-  fill(255, 255, 255, 130);
-  text("ZONA CABECA", 10, 8);
-  text("ZONA TRONCO", 10, zones.headMaxY + 8);
-  text("ZONA PERNAS", 10, zones.torsoMaxY + 8);
-}
-
 // =============================================================
 //  COLISOES
 // =============================================================
@@ -743,12 +759,10 @@ function checkCollision(ob) {
   let minY = ob.y - ob.h - hitPad;
   let maxY = ob.y + ob.h + hitPad;
 
-  // faca lateral pode ser bloqueada pelo antebraco
   if (ob.type === "knife" && ob.dir === "right") {
     if (doesForearmBlock(ob, kp)) return false;
   }
 
-  // obstaculo lateral nas pernas pode ser evitado pela canela
   if (ob.dir === "right" && ob.zone === "legs") {
     if (doesShinJumpOver(ob, kp)) return false;
   }
@@ -790,7 +804,6 @@ function getBodyCollisionSegments(kp) {
     }
   }
 
-  // fallback braços
   if (isVisible(kp[5], 0.10) && !isVisible(kp[7], 0.10) && isVisible(kp[9], 0.10)) {
     segments.push([kp[5], kp[9]]);
   }
@@ -798,7 +811,6 @@ function getBodyCollisionSegments(kp) {
     segments.push([kp[6], kp[10]]);
   }
 
-  // fallback pernas
   if (isVisible(kp[11], 0.10) && !isVisible(kp[13], 0.10) && isVisible(kp[15], 0.10)) {
     segments.push([kp[11], kp[15]]);
   }
@@ -853,69 +865,6 @@ function doesShinJumpOver(ob, kp) {
   return leftShinHits || rightShinHits;
 }
 
-function pointInRect(px, py, minX, minY, maxX, maxY) {
-  return px >= minX && px <= maxX && py >= minY && py <= maxY;
-}
-
-function lineIntersectsRect(x1, y1, x2, y2, minX, minY, maxX, maxY) {
-  if (pointInRect(x1, y1, minX, minY, maxX, maxY)) return true;
-  if (pointInRect(x2, y2, minX, minY, maxX, maxY)) return true;
-
-  return (
-    segmentsIntersect(x1, y1, x2, y2, minX, minY, maxX, minY) ||
-    segmentsIntersect(x1, y1, x2, y2, maxX, minY, maxX, maxY) ||
-    segmentsIntersect(x1, y1, x2, y2, maxX, maxY, minX, maxY) ||
-    segmentsIntersect(x1, y1, x2, y2, minX, maxY, minX, minY)
-  );
-}
-
-function segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
-  let den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (abs(den) < 1e-6) return false;
-
-  let t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
-  let u = ((x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2)) / den;
-
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
-}
-
-// =============================================================
-//  ACOES DO JOGADOR
-// =============================================================
-function isBlocking(kp) {
-  let lw = kp[9], ls = kp[5];
-  let rw = kp[10], rs = kp[6];
-
-  let leftBlock =
-    isVisible(lw, 0.18) &&
-    isVisible(ls, 0.18) &&
-    lw.y < ls.y - 20;
-
-  let rightBlock =
-    isVisible(rw, 0.18) &&
-    isVisible(rs, 0.18) &&
-    rw.y < rs.y - 20;
-
-  return leftBlock || rightBlock;
-}
-
-function isLegRaised(kp) {
-  let lk = kp[13], lh = kp[11];
-  let rk = kp[14], rh = kp[12];
-
-  let leftLeg =
-    isVisible(lk, 0.18) &&
-    isVisible(lh, 0.18) &&
-    lk.y < lh.y - 20;
-
-  let rightLeg =
-    isVisible(rk, 0.18) &&
-    isVisible(rh, 0.18) &&
-    rk.y < rh.y - 20;
-
-  return leftLeg || rightLeg;
-}
-
 // =============================================================
 //  ESQUELETO
 // =============================================================
@@ -929,25 +878,20 @@ function drawSkeleton() {
   strokeWeight(5);
   strokeCap(ROUND);
 
-  // Tronco
   drawStableSegment(drawKp[5], drawKp[6], 0.12);
   drawStableSegment(drawKp[5], drawKp[11], 0.12);
   drawStableSegment(drawKp[6], drawKp[12], 0.12);
   drawStableSegment(drawKp[11], drawKp[12], 0.12);
 
-  // Cabeca
   drawStableSegment(drawKp[0], drawKp[5], 0.12);
   drawStableSegment(drawKp[0], drawKp[6], 0.12);
 
-  // Bracos
   drawLimbWithFallback(drawKp[5], drawKp[7], drawKp[9], 0.10);
   drawLimbWithFallback(drawKp[6], drawKp[8], drawKp[10], 0.10);
 
-  // Pernas
   drawLimbWithFallback(drawKp[11], drawKp[13], drawKp[15], 0.10);
   drawLimbWithFallback(drawKp[12], drawKp[14], drawKp[16], 0.10);
 
-  // Juntas para dar mais leitura visual
   drawJoint(drawKp[5], 0.10);
   drawJoint(drawKp[6], 0.10);
   drawJoint(drawKp[7], 0.10);
@@ -1080,18 +1024,8 @@ function drawFaceContour(kp) {
 }
 
 // =============================================================
-//  VISIBILIDADE / TRACKING
+//  TRACKING
 // =============================================================
-function isVisible(p, minConfidence = 0.2) {
-  return (
-    p &&
-    Number.isFinite(p.x) &&
-    Number.isFinite(p.y) &&
-    Number.isFinite(p.confidence) &&
-    p.confidence > minConfidence
-  );
-}
-
 function getTrackedKeypointsForDraw(kp) {
   let result = Array.from({ length: 17 }, (_, i) => (kp && kp[i]) ? kp[i] : null);
 
