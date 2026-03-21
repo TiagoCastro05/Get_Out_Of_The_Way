@@ -26,8 +26,9 @@ const TPOSE_HOLD_FRAMES = 42;
 let tPoseHoldCounter = 0;
 
 // -- TRACKING -------------------------------------------------
-const TRACKED_POINT_HOLD = 35;
-let trackedKeypoints = Array.from({ length: 17 }, () => null);
+// Sistema simplificado: mantém histórico dos keypoints para interpolação
+const KEYPOINT_HISTORY = 20; // frames de memória
+let keypointHistory = []; // Array de poses anteriores
 
 const FACE_CONTOUR_HOLD = 12;
 let lastFaceContour = null;
@@ -65,6 +66,9 @@ let imgKnife;
 let imgBullet;
 let imgHeart;
 let imgShield;
+let imgBlockArmKnife;
+let imgBlockLegKnife;
+let imgPoseInicial;
 
 // =============================================================
 //  HELPERS GERAIS
@@ -116,21 +120,61 @@ function lineIntersectsRect(x1, y1, x2, y2, minX, minY, maxX, maxY) {
 //  PRELOAD
 // =============================================================
 function preload() {
-  imgKnife = loadImage("Imagens/Knife.png", () => {}, () => {
-    imgKnife = null;
-  });
+  imgKnife = loadImage(
+    "Imagens/Knife.png",
+    () => {},
+    () => {
+      imgKnife = null;
+    },
+  );
 
-  imgBullet = loadImage("Imagens/Bullet.png", () => {}, () => {
-    imgBullet = null;
-  });
+  imgBullet = loadImage(
+    "Imagens/Bullet.png",
+    () => {},
+    () => {
+      imgBullet = null;
+    },
+  );
 
-  imgHeart = loadImage("Imagens/Heart.png", () => {}, () => {
-    imgHeart = null;
-  });
+  imgHeart = loadImage(
+    "Imagens/Heart.png",
+    () => {},
+    () => {
+      imgHeart = null;
+    },
+  );
 
-  imgShield = loadImage("Imagens/escudo.png", () => {}, () => {
-    imgShield = null;
-  });
+  imgShield = loadImage(
+    "Imagens/escudo.png",
+    () => {},
+    () => {
+      imgShield = null;
+    },
+  );
+
+  imgBlockArmKnife = loadImage(
+    "Imagens/bloquear_faca_braco.png",
+    () => {},
+    () => {
+      imgBlockArmKnife = null;
+    },
+  );
+
+  imgBlockLegKnife = loadImage(
+    "Imagens/bloquear_faca_perna.png",
+    () => {},
+    () => {
+      imgBlockLegKnife = null;
+    },
+  );
+
+  imgPoseInicial = loadImage(
+    "Imagens/pose_inicial.png",
+    () => {},
+    () => {
+      imgPoseInicial = null;
+    },
+  );
 }
 
 // =============================================================
@@ -168,41 +212,36 @@ function windowResized() {
 //  CALLBACK POSES
 // =============================================================
 function onPoses(results) {
+  // Extrair e normalizar os keypoints
   poses = (results || []).map((r) => {
+    let keypoints = [];
+    let source = null;
+
+    // Encontrar a fonte dos keypoints (pode variar entre versões de ml5)
     if (r && r.pose && Array.isArray(r.pose.keypoints)) {
-      return {
-        keypoints: r.pose.keypoints.map((k) => ({
-          x: Number.isFinite(k.position ? k.position.x : k.x)
-            ? (k.position ? k.position.x : k.x)
-            : null,
-          y: Number.isFinite(k.position ? k.position.y : k.y)
-            ? (k.position ? k.position.y : k.y)
-            : null,
-          confidence: Number.isFinite(k.score ?? k.confidence)
-            ? (k.score ?? k.confidence)
-            : 0,
-        })),
-      };
+      source = r.pose.keypoints;
+    } else if (r && Array.isArray(r.keypoints)) {
+      source = r.keypoints;
     }
 
-    if (r && Array.isArray(r.keypoints)) {
-      return {
-        keypoints: r.keypoints.map((k) => ({
-          x: Number.isFinite(k.position ? k.position.x : k.x)
-            ? (k.position ? k.position.x : k.x)
-            : null,
-          y: Number.isFinite(k.position ? k.position.y : k.y)
-            ? (k.position ? k.position.y : k.y)
-            : null,
-          confidence: Number.isFinite(k.score ?? k.confidence)
-            ? (k.score ?? k.confidence)
-            : 0,
-        })),
-      };
+    if (source) {
+      keypoints = source.map((k) => ({
+        x: k.position?.x ?? k.x ?? null,
+        y: k.position?.y ?? k.y ?? null,
+        confidence: k.score ?? k.confidence ?? 0,
+      }));
     }
 
-    return { keypoints: [] };
+    return { keypoints };
   });
+
+  // Manter histórico para interpolação
+  if (poses.length > 0 && poses[0].keypoints.length > 0) {
+    keypointHistory.push(JSON.parse(JSON.stringify(poses[0].keypoints)));
+    if (keypointHistory.length > KEYPOINT_HISTORY) {
+      keypointHistory.shift();
+    }
+  }
 }
 
 // =============================================================
@@ -253,7 +292,11 @@ function drawLoadingScreen() {
   textSize(32);
   text("A carregar modelo PoseNet...", width / 2, height / 2);
   textSize(18);
-  text("Por favor aguarde e permita o acesso a webcam.", width / 2, height / 2 + 50);
+  text(
+    "Por favor aguarde e permita o acesso a webcam.",
+    width / 2,
+    height / 2 + 50,
+  );
 }
 
 // =============================================================
@@ -265,8 +308,8 @@ function drawStartScreen() {
 
   let topY = 78;
   let panelH = min(height * 0.66, 430);
-  let leftW = min(width * 0.3, 360);
-  let rightW = min(width * 0.28, 330);
+  let leftW = min(width * 0.32, 360);
+  let rightW = min(width * 0.28, 340);
   let margin = max(26, width * 0.05);
 
   let leftX = margin;
@@ -279,44 +322,142 @@ function drawStartScreen() {
   textSize(28);
   text("GET OUT OF THE WAY", width / 2, 24);
 
+  // ======= PAINEL ESQUERDO: Metodos de bloqueio ========
   fill(12, 22, 34, 215);
   rect(leftX, leftY, leftW, panelH, 14);
 
-  let rowY = leftY + 24;
-  let rowH = 108;
-  drawRuleExampleRow(leftX + 10, rowY, leftW - 20, rowH, "knife", true);
-  drawRuleExampleRow(leftX + 10, rowY + rowH + 10, leftW - 20, rowH, "bullet", false);
-  drawRuleExampleRow(leftX + 10, rowY + (rowH + 10) * 2, leftW - 20, rowH, "leg-up", null);
+  fill(255, 255, 200);
+  textSize(16);
+  textAlign(LEFT, TOP);
+  text("BLOQUEAR COM:", leftX + 16, leftY + 12);
 
+  // Bloqueio com braço
+  fill(24, 40, 58, 230);
+  noStroke();
+  let armBoxH = 120;
+  rect(leftX + 12, leftY + 40, leftW - 24, armBoxH, 8);
+
+  fill(COL_TEXT);
+  textSize(11);
+  textAlign(CENTER, TOP);
+  text("Braço", leftX + leftW / 2, leftY + 46);
+
+  if (imgBlockArmKnife) {
+    push();
+    imageMode(CENTER);
+    image(
+      imgBlockArmKnife,
+      leftX + leftW / 2,
+      leftY + 40 + armBoxH / 2 + 4,
+      130,
+      90,
+    );
+    pop();
+  }
+
+  // Bloqueio com perna
+  fill(24, 40, 58, 230);
+  noStroke();
+  let legBoxY = leftY + 40 + armBoxH + 5;
+  rect(leftX + 12, legBoxY, leftW - 24, armBoxH, 8);
+
+  fill(COL_TEXT);
+  textSize(11);
+  textAlign(CENTER, TOP);
+  text("Perna", leftX + leftW / 2, legBoxY + 6);
+
+  if (imgBlockLegKnife) {
+    push();
+    imageMode(CENTER);
+    image(
+      imgBlockLegKnife,
+      leftX + leftW / 2,
+      legBoxY + armBoxH / 2 + 4,
+      100,
+      90,
+    );
+    pop();
+  }
+
+  // Bala - mantém o padrão antigo
+  fill(24, 40, 58, 230);
+  noStroke();
+  let bulletBoxY = legBoxY + armBoxH + 10;
+  rect(leftX + 12, bulletBoxY, leftW - 24, armBoxH, 8);
+
+  let iconX = leftX + leftW / 2 - 20;
+  let iconY = bulletBoxY + armBoxH / 2;
+
+  fill(COL_TEXT);
+  textSize(11);
+  textAlign(CENTER, TOP);
+  text("Bala", leftX + leftW / 2, bulletBoxY + 6);
+
+  // Desenha a bala (imagem ou fallback)
+  if (imgBullet) {
+    push();
+    imageMode(CENTER);
+    image(imgBullet, iconX, iconY, 42, 42);
+    pop();
+  } else {
+    fill(255, 215, 0);
+    noStroke();
+    circle(iconX, iconY, 20);
+  }
+
+  // Escudo com X
+  drawShieldBadge(leftX + leftW / 2 + 20, iconY, false);
+
+  // ======= PAINEL DIREITO: Info do jogo ========
   fill(14, 28, 42, 215);
   rect(rightX, rightY, rightW, panelH, 14);
 
   fill(170, 220, 245);
-  textSize(18);
-  text("INICIAR", rightX + 14, rightY + 10);
+  textSize(35);
+  textAlign(LEFT, TOP);
+  text("OBJETIVO", rightX + 14, rightY + 14);
 
   fill(COL_TEXT);
-  textAlign(CENTER, TOP);
-  textSize(16);
-  text("Faz esta pose para comecar", rightX + rightW * 0.5, rightY + 44);
+  textSize(20);
+  text("Sobrevive o máximo", rightX + 14, rightY + 50);
+  text("de tempo possível", rightX + 14, rightY + 70);
 
-  drawStartPoseIcon(
-    rightX + rightW * 0.5,
-    rightY + panelH * 0.52,
-    min(150, rightW * 0.68)
-  );
+  // Vidas
+  fill(170, 220, 245);
+  textSize(20);
+  text("VIDAS: 3", rightX + 14, rightY + 100);
 
-  textSize(16);
-  text("T-POSE", rightX + rightW * 0.5, rightY + panelH - 78);
+  // Iniciar
+  fill(170, 220, 245);
+  textSize(20);
+  textAlign(LEFT, TOP);
+  text("INICIAR:", rightX + 14, rightY + 140);
 
-  textSize(14);
+  fill(COL_TEXT);
+  textSize(20);
+  textAlign(LEFT, TOP);
+  text("1. Levanta os bra\u00e7os 30º/45º", rightX + 14, rightY + 165);
+  text("2. Espera a barra encher", rightX + 14, rightY + 185);
+
+
+  // Imagem pose inicial
+  if (imgPoseInicial) {
+    push();
+    imageMode(CENTER);
+    image(imgPoseInicial, rightX + rightW / 2, rightY + panelH - 150, 120, 130);
+    pop();
+  }
+
   fill(190, 230, 245);
-  text("(ou prima ESPACO)", rightX + rightW * 0.5, rightY + panelH - 54);
+  textSize(20);
+  textAlign(CENTER, TOP);
+  text("Ou prima ESPAÇO", rightX + rightW / 2, rightY + panelH - 60);
 
   drawTPoseBar();
 }
 
 function drawRuleExampleRow(x, y, w, h, objType, shieldOk) {
+  // Função obsoleta - preservada para compatibilidade
   fill(24, 40, 58, 230);
   noStroke();
   rect(x, y, w, h, 10);
@@ -406,9 +547,48 @@ function drawStartPoseIcon(cx, cy, size) {
   circle(0, -torsoH * 0.86, headR * 2);
   line(0, -torsoH * 0.7, 0, torsoH * 0.2);
 
-  line(0, -torsoH * 0.45, -armLen, -torsoH * 0.45);
-  line(0, -torsoH * 0.45, armLen, -torsoH * 0.45);
+  // A-POSE: braços levantados em ângulo ~45º
+  let armAngle = radians(45);
+  let armX = armLen * sin(armAngle);
+  let armY = -armLen * cos(armAngle);
 
+  line(0, -torsoH * 0.45, -armX, -torsoH * 0.45 + armY);
+  line(0, -torsoH * 0.45, armX, -torsoH * 0.45 + armY);
+
+  line(0, torsoH * 0.2, -legLen * 0.55, torsoH * 0.2 + legLen);
+  line(0, torsoH * 0.2, legLen * 0.55, torsoH * 0.2 + legLen);
+
+  pop();
+}
+
+// Silhueta do jogador mostrando posição ideal durante o jogo
+function drawPlayerSilhouette(cx, cy, size) {
+  push();
+  translate(cx, cy);
+  stroke(180, 240, 255, 120); // Semitransparente
+  strokeWeight(2.5);
+  strokeCap(ROUND);
+  noFill();
+
+  let headR = size * 0.11;
+  let torsoH = size * 0.33;
+  let armLen = size * 0.34;
+  let legLen = size * 0.24;
+
+  // Cabeça
+  circle(0, -torsoH * 0.86, headR * 2);
+  // Torso
+  line(0, -torsoH * 0.7, 0, torsoH * 0.2);
+
+  // A-POSE: braços levantados em ângulo ~45º
+  let armAngle = radians(45);
+  let armX = armLen * sin(armAngle);
+  let armY = -armLen * cos(armAngle);
+
+  line(0, -torsoH * 0.45, -armX, -torsoH * 0.45 + armY);
+  line(0, -torsoH * 0.45, armX, -torsoH * 0.45 + armY);
+
+  // Pernas
   line(0, torsoH * 0.2, -legLen * 0.55, torsoH * 0.2 + legLen);
   line(0, torsoH * 0.2, legLen * 0.55, torsoH * 0.2 + legLen);
 
@@ -487,51 +667,62 @@ function drawTPoseBar() {
   rect(x, y, w * pct, h, 8);
 }
 
-function isTPose(kp) {
-  let ls = kp[5], rs = kp[6];
-  let le = kp[7], re = kp[8];
-  let lw = kp[9], rw = kp[10];
-  let lh = kp[11], rh = kp[12];
+// =============================================================
+//  T-POSE DETECTION - REFAZIDO DO ZERO
+// =============================================================
+// Requisitos:
+// 1. Braços abertos para os lados (horizontalmente)
+// 2. Mãos longe dos ombros (alcance lateral)
+// 3. Corpo ereto (ombros acima das ancas)
 
-  if (!isVisible(ls, 0.12) || !isVisible(rs, 0.12) || !isVisible(lh, 0.12) || !isVisible(rh, 0.12)) {
+function isTPose(kp) {
+  // Verificar se temos os pontos críticos (com threshold MUITO baixo)
+  let ls = kp[5],
+    rs = kp[6]; // Ombros
+  let lw = kp[9],
+    rw = kp[10]; // Pulsos
+  let lh = kp[11],
+    rh = kp[12]; // Ancas
+
+  const SHOULDER_CONF = 0.05; // MUITO baixo para funcionar com corpo longe
+  const WRIST_CONF = 0.03; // MUITO baixo para pulsos (podem ter confiance basicamente 0 longe)
+  const HIP_CONF = 0.05; // MUITO baixo para ancas
+
+  if (
+    !isVisible(ls, SHOULDER_CONF) ||
+    !isVisible(rs, SHOULDER_CONF) ||
+    !isVisible(lw, WRIST_CONF) ||
+    !isVisible(rw, WRIST_CONF) ||
+    !isVisible(lh, HIP_CONF) ||
+    !isVisible(rh, HIP_CONF)
+  ) {
     return false;
   }
 
-  let leftArmOk = isArmInTPose(ls, le, lw, -1);
-  let rightArmOk = isArmInTPose(rs, re, rw, 1);
-
+  // VERIFICAÇÃO 1: Corpo ereto (ancas abaixo dos ombros)
   let shoulderMidY = (ls.y + rs.y) * 0.5;
   let hipMidY = (lh.y + rh.y) * 0.5;
-  let uprightTorso = hipMidY - shoulderMidY > 30;
+  let bodyUpright = hipMidY > shoulderMidY + 30; // Reduzido de 40px para 30px
 
-  return leftArmOk && rightArmOk && uprightTorso;
-}
+  if (!bodyUpright) return false;
 
-function isArmInTPose(shoulder, elbow, wrist, sideDir) {
-  if (!isVisible(shoulder, 0.12) || !isVisible(wrist, 0.12)) {
-    return false;
-  }
+  // VERIFICAÇÃO 2: Braços abertos (pulsos longe dos ombros)
+  // Agora aceitamos braços menos abertos (relaxados/dobrados também contam)
+  let leftWristDistance = abs(lw.x - ls.x);
+  let rightWristDistance = abs(rw.x - rs.x);
 
-  let maxYDelta = 60;
-  let minReach = 35;
+  const MIN_ARM_REACH = 40; // Reduzido de 60px para 40px (aceita braços dobrados)
+  let armsOpen =
+    leftWristDistance > MIN_ARM_REACH && rightWristDistance > MIN_ARM_REACH;
 
-  let wristHorizontal = abs(wrist.y - shoulder.y) < maxYDelta;
-  let wristOpen = sideDir < 0
-    ? wrist.x < shoulder.x - minReach
-    : wrist.x > shoulder.x + minReach;
+  if (!armsOpen) return false;
 
-  let elbowValid = isVisible(elbow, 0.10);
+  // VERIFICAÇÃO 3: Pulsos num intervalo de altura razoável
+  // Aceita pulsos acima, ao lado ou ligeiramente abaixo dos ombros
+  let leftWristVertical = abs(lw.y - ls.y) < 200; // Aumentado de 150px para 200px
+  let rightWristVertical = abs(rw.y - rs.y) < 200; // Aceita mais variação
 
-  if (elbowValid) {
-    let elbowHorizontal = abs(elbow.y - shoulder.y) < maxYDelta + 6;
-    let elbowBetween = sideDir < 0
-      ? (elbow.x < shoulder.x && elbow.x > wrist.x - 30)
-      : (elbow.x > shoulder.x && elbow.x < wrist.x + 30);
-
-    return wristHorizontal && wristOpen && elbowHorizontal && elbowBetween;
-  }
-
-  return wristHorizontal && wristOpen;
+  return leftWristVertical && rightWristVertical;
 }
 
 // =============================================================
@@ -651,14 +842,23 @@ function updateObstacles() {
 
     drawObstacle(ob);
 
-    if (hitCooldown === 0 && checkCollision(ob)) {
-      loseLife();
-      obstacles.splice(i, 1);
+    if (hitCooldown === 0) {
+      let collisionResult = checkCollision(ob);
 
-      if (gameState === "dead") {
-        return;
+      if (collisionResult === "blocked") {
+        // Obst\u00e1culo foi bloqueado com sucesso! Remove sem causar dano
+        obstacles.splice(i, 1);
+        continue;
+      } else if (collisionResult === true) {
+        // Colis\u00e3o com o corpo! Causa dano e remove
+        loseLife();
+        obstacles.splice(i, 1);
+
+        if (gameState === "dead") {
+          return;
+        }
+        continue;
       }
-      continue;
     }
 
     if (ob.dir === "right" && ob.zone === "legs" && ob.x < width - 60) {
@@ -728,9 +928,10 @@ function drawTopWarning(ob) {
   let alpha = 120 + 120 * pulse;
   let blinkOn = frameCount % 20 < 12;
 
-  let bgCol = ob.type === "bullet"
-    ? color(255, 220, 70, alpha)
-    : color(255, 110, 110, alpha);
+  let bgCol =
+    ob.type === "bullet"
+      ? color(255, 220, 70, alpha)
+      : color(255, 110, 110, alpha);
 
   if (blinkOn) {
     noStroke();
@@ -748,39 +949,65 @@ function drawTopWarning(ob) {
 // =============================================================
 //  COLISOES
 // =============================================================
+// =============================================================
+//  COLLISION DETECTION - REFAZIDO DO ZERO
+// =============================================================
+// Lógica simples:
+// 1. Braços podem bloquear facas do meio (zona torso/cabeça)
+// 2. Pernas podem bloquear facas de baixo (zona pernas)
+// 3. Resto do corpo sofre colisão
+
 function checkCollision(ob) {
   if (poses.length === 0) return false;
 
-  let kp = getTrackedKeypointsForDraw(poses[0].keypoints);
+  let kp = poses[0].keypoints;
+  if (!kp || kp.length < 17) return false;
 
-  let hitPad = 14;
+  let hitPad = 16; // Zona de detecção ao redor do obstáculo
   let minX = ob.x - ob.w - hitPad;
   let maxX = ob.x + ob.w + hitPad;
   let minY = ob.y - ob.h - hitPad;
   let maxY = ob.y + ob.h + hitPad;
 
+  // TENTATIVA 1: Bloquear com os braços (antebraços)
   if (ob.type === "knife" && ob.dir === "right") {
-    if (doesForearmBlock(ob, kp)) return false;
+    if (canArmBlock(kp, minX, maxX, minY, maxY)) {
+      // Braço bloqueou com sucesso! Remove o obstáculo
+      return "blocked";
+    }
   }
 
+  // TENTATIVA 2: Bloquear com as pernas
   if (ob.dir === "right" && ob.zone === "legs") {
-    if (doesShinJumpOver(ob, kp)) return false;
+    if (canLegBlock(kp, minX, maxX, minY, maxY)) {
+      // Perna bloqueou com sucesso! Remove o obstáculo
+      return "blocked";
+    }
   }
 
-  let bodyPoints = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+  // FALLBACK: Verificar colisão com todo o corpo
+  return hasBodyCollision(kp, minX, maxX, minY, maxY);
+}
 
-  for (let idx of bodyPoints) {
-    let p = kp[idx];
-    if (!isVisible(p, 0.18)) continue;
+// Braços podem bloquear: usa os antebraços (cotovelo->pulso)
+function canArmBlock(kp, minX, maxX, minY, maxY) {
+  const ARM_CONF = 0.03; // MUITO baixo para braços
 
-    if (pointInRect(p.x, p.y, minX, minY, maxX, maxY)) {
+  let le = kp[7],
+    lw = kp[9]; // Cotovelo esq, Pulso esq
+  let re = kp[8],
+    rw = kp[10]; // Cotovelo dir, Pulso dir
+
+  // Braço esquerdo: linha do cotovelo ao pulso
+  if (isVisible(le, ARM_CONF) && isVisible(lw, ARM_CONF)) {
+    if (lineIntersectsRect(le.x, le.y, lw.x, lw.y, minX, minY, maxX, maxY)) {
       return true;
     }
   }
 
-  let segments = getBodyCollisionSegments(kp);
-  for (let [a, b] of segments) {
-    if (lineIntersectsRect(a.x, a.y, b.x, b.y, minX, minY, maxX, maxY)) {
+  // Braço direito: linha do cotovelo ao pulso
+  if (isVisible(re, ARM_CONF) && isVisible(rw, ARM_CONF)) {
+    if (lineIntersectsRect(re.x, re.y, rw.x, rw.y, minX, minY, maxX, maxY)) {
       return true;
     }
   }
@@ -788,147 +1015,127 @@ function checkCollision(ob) {
   return false;
 }
 
-function getBodyCollisionSegments(kp) {
-  let pairs = [
-    [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-    [5, 11], [6, 12], [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
-    [0, 5], [0, 6],
-  ];
+// Pernas podem bloquear: usa as canelas (joelho->tornozelo)
+function canLegBlock(kp, minX, maxX, minY, maxY) {
+  const LEG_CONF = 0.05; // MUITO baixo para pernas
 
-  let segments = [];
+  let lk = kp[13],
+    la = kp[15]; // Joelho esq, Tornozelo esq
+  let rk = kp[14],
+    ra = kp[16]; // Joelho dir, Tornozelo dir
 
-  for (let [ia, ib] of pairs) {
-    let a = kp[ia], b = kp[ib];
-    if (isVisible(a, 0.10) && isVisible(b, 0.10)) {
-      segments.push([a, b]);
+  // Perna esquerda: linha do joelho ao tornozelo
+  if (isVisible(lk, LEG_CONF) && isVisible(la, LEG_CONF)) {
+    if (lineIntersectsRect(lk.x, lk.y, la.x, la.y, minX, minY, maxX, maxY)) {
+      return true;
     }
   }
 
-  if (isVisible(kp[5], 0.10) && !isVisible(kp[7], 0.10) && isVisible(kp[9], 0.10)) {
-    segments.push([kp[5], kp[9]]);
-  }
-  if (isVisible(kp[6], 0.10) && !isVisible(kp[8], 0.10) && isVisible(kp[10], 0.10)) {
-    segments.push([kp[6], kp[10]]);
-  }
-
-  if (isVisible(kp[11], 0.10) && !isVisible(kp[13], 0.10) && isVisible(kp[15], 0.10)) {
-    segments.push([kp[11], kp[15]]);
-  }
-  if (isVisible(kp[12], 0.10) && !isVisible(kp[14], 0.10) && isVisible(kp[16], 0.10)) {
-    segments.push([kp[12], kp[16]]);
+  // Perna direita: linha do joelho ao tornozelo
+  if (isVisible(rk, LEG_CONF) && isVisible(ra, LEG_CONF)) {
+    if (lineIntersectsRect(rk.x, rk.y, ra.x, ra.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
   }
 
-  return segments;
+  return false;
 }
 
-function doesForearmBlock(ob, kp) {
-  let minX = ob.x - ob.w - 10;
-  let maxX = ob.x + ob.w + 10;
-  let minY = ob.y - ob.h - 10;
-  let maxY = ob.y + ob.h + 10;
+// Verificar colisão com corpo todo (se não conseguiu bloquear)
+function hasBodyCollision(kp, minX, maxX, minY, maxY) {
+  const BODY_CONF = 0.05; // MUITO baixo
 
-  let le = kp[7], lw = kp[9];
-  let re = kp[8], rw = kp[10];
+  // Pontos principais do corpo
+  let criticalPoints = [
+    0, // Nariz
+    5,
+    6, // Ombros
+    11,
+    12, // Ancas
+    7,
+    8, // Cotovelos
+    13,
+    14, // Joelhos
+  ];
 
-  let leftForearmHits =
-    isVisible(le, 0.10) &&
-    isVisible(lw, 0.10) &&
-    lineIntersectsRect(le.x, le.y, lw.x, lw.y, minX, minY, maxX, maxY);
+  for (let idx of criticalPoints) {
+    let p = kp[idx];
+    if (isVisible(p, BODY_CONF)) {
+      if (pointInRect(p.x, p.y, minX, minY, maxX, maxY)) {
+        return true;
+      }
+    }
+  }
 
-  let rightForearmHits =
-    isVisible(re, 0.10) &&
-    isVisible(rw, 0.10) &&
-    lineIntersectsRect(re.x, re.y, rw.x, rw.y, minX, minY, maxX, maxY);
-
-  return leftForearmHits || rightForearmHits;
-}
-
-function doesShinJumpOver(ob, kp) {
-  let minX = ob.x - ob.w - 10;
-  let maxX = ob.x + ob.w + 10;
-  let minY = ob.y - ob.h - 10;
-  let maxY = ob.y + ob.h + 10;
-
-  let lk = kp[13], la = kp[15];
-  let rk = kp[14], ra = kp[16];
-
-  let leftShinHits =
-    isVisible(lk, 0.10) &&
-    isVisible(la, 0.10) &&
-    lineIntersectsRect(lk.x, lk.y, la.x, la.y, minX, minY, maxX, maxY);
-
-  let rightShinHits =
-    isVisible(rk, 0.10) &&
-    isVisible(ra, 0.10) &&
-    lineIntersectsRect(rk.x, rk.y, ra.x, ra.y, minX, minY, maxX, maxY);
-
-  return leftShinHits || rightShinHits;
+  return false;
 }
 
 // =============================================================
-//  ESQUELETO
+//  ESQUELETO - REFAZIDO DO ZERO
 // =============================================================
+// Renderiza apenas o esqueleto básico com thresholds adequados
+
 function drawSkeleton() {
   if (poses.length === 0) return;
 
   let kp = poses[0].keypoints;
-  let drawKp = getTrackedKeypointsForDraw(kp);
+  if (!kp || kp.length < 17) return;
 
   stroke(120, 230, 255, 210);
   strokeWeight(5);
   strokeCap(ROUND);
 
-  drawStableSegment(drawKp[5], drawKp[6], 0.12);
-  drawStableSegment(drawKp[5], drawKp[11], 0.12);
-  drawStableSegment(drawKp[6], drawKp[12], 0.12);
-  drawStableSegment(drawKp[11], drawKp[12], 0.12);
+  // Torso (pode ter confiança baixa quando corpo está longe)
+  drawLimb(kp[5], kp[6], 0.05); // Ombro esq -> Ombro dir
+  drawLimb(kp[5], kp[11], 0.05); // Ombro esq -> Anca esq
+  drawLimb(kp[6], kp[12], 0.05); // Ombro dir -> Anca dir
+  drawLimb(kp[11], kp[12], 0.05); // Anca esq -> Anca dir
 
-  drawStableSegment(drawKp[0], drawKp[5], 0.12);
-  drawStableSegment(drawKp[0], drawKp[6], 0.12);
+  // Cabeça
+  drawLimb(kp[0], kp[5], 0.05); // Nariz -> Ombro esq
+  drawLimb(kp[0], kp[6], 0.05); // Nariz -> Ombro dir
 
-  drawLimbWithFallback(drawKp[5], drawKp[7], drawKp[9], 0.10);
-  drawLimbWithFallback(drawKp[6], drawKp[8], drawKp[10], 0.10);
+  // Braços (muito baixo - podem ter confiance quase 0 longe)
+  drawLimb(kp[5], kp[7], 0.02); // Ombro esq -> Cotovelo esq
+  drawLimb(kp[7], kp[9], 0.02); // Cotovelo esq -> Pulso esq
+  drawLimb(kp[6], kp[8], 0.02); // Ombro dir -> Cotovelo dir
+  drawLimb(kp[8], kp[10], 0.02); // Cotovelo dir -> Pulso dir
 
-  drawLimbWithFallback(drawKp[11], drawKp[13], drawKp[15], 0.10);
-  drawLimbWithFallback(drawKp[12], drawKp[14], drawKp[16], 0.10);
+  // Pernas (baixo mas um pouco mais alto que braços)
+  drawLimb(kp[11], kp[13], 0.05); // Anca esq -> Joelho esq
+  drawLimb(kp[13], kp[15], 0.05); // Joelho esq -> Tornozelo esq
+  drawLimb(kp[12], kp[14], 0.05); // Anca dir -> Joelho dir
+  drawLimb(kp[14], kp[16], 0.05); // Joelho dir -> Tornozelo dir
 
-  drawJoint(drawKp[5], 0.10);
-  drawJoint(drawKp[6], 0.10);
-  drawJoint(drawKp[7], 0.10);
-  drawJoint(drawKp[8], 0.10);
-  drawJoint(drawKp[9], 0.10);
-  drawJoint(drawKp[10], 0.10);
-  drawJoint(drawKp[11], 0.10);
-  drawJoint(drawKp[12], 0.10);
-  drawJoint(drawKp[13], 0.10);
-  drawJoint(drawKp[14], 0.10);
-  drawJoint(drawKp[15], 0.10);
-  drawJoint(drawKp[16], 0.10);
+  // Desenhar junções (pontos)
+  drawJoint(kp[0], 0.05); // Nariz
+  drawJoint(kp[5], 0.05); // Ombro esq
+  drawJoint(kp[6], 0.05); // Ombro dir
+  drawJoint(kp[7], 0.02); // Cotovelo esq
+  drawJoint(kp[8], 0.02); // Cotovelo dir
+  drawJoint(kp[9], 0.02); // Pulso esq
+  drawJoint(kp[10], 0.02); // Pulso dir
+  drawJoint(kp[11], 0.05); // Anca esq
+  drawJoint(kp[12], 0.05); // Anca dir
+  drawJoint(kp[13], 0.05); // Joelho esq
+  drawJoint(kp[14], 0.05); // Joelho dir
+  drawJoint(kp[15], 0.05); // Tornozelo esq
+  drawJoint(kp[16], 0.05); // Tornozelo dir
 
-  drawFaceContour(drawKp);
+  // Contorno facial
+  drawFaceContour(kp);
 }
 
-function drawStableSegment(a, b, minConfidence = 0.12) {
-  if (isVisible(a, minConfidence) && isVisible(b, minConfidence)) {
+// Desenha linha entre dois keypoints
+function drawLimb(a, b, minConf) {
+  if (isVisible(a, minConf) && isVisible(b, minConf)) {
     line(a.x, a.y, b.x, b.y);
   }
 }
 
-function drawLimbWithFallback(a, b, c, minConfidence = 0.10) {
-  let hasA = isVisible(a, minConfidence);
-  let hasB = isVisible(b, minConfidence);
-  let hasC = isVisible(c, minConfidence);
-
-  if (hasA && hasB) line(a.x, a.y, b.x, b.y);
-  if (hasB && hasC) line(b.x, b.y, c.x, c.y);
-
-  if (hasA && !hasB && hasC) {
-    line(a.x, a.y, c.x, c.y);
-  }
-}
-
-function drawJoint(p, minConfidence = 0.10) {
-  if (!isVisible(p, minConfidence)) return;
+// Desenha um ponto (junta)
+function drawJoint(p, minConf) {
+  if (!isVisible(p, minConf)) return;
 
   noStroke();
   fill(180, 245, 255, 200);
@@ -941,14 +1148,17 @@ function drawJoint(p, minConfidence = 0.10) {
 
 function drawFaceContour(kp) {
   let nose = kp[0];
-  let leftEye = kp[1], rightEye = kp[2];
-  let leftEar = kp[3], rightEar = kp[4];
-  let ls = kp[5], rs = kp[6];
+  let leftEye = kp[1],
+    rightEye = kp[2];
+  let leftEar = kp[3],
+    rightEar = kp[4];
+  let ls = kp[5],
+    rs = kp[6];
 
   let hasNose = isVisible(nose, 0.12);
-  let hasEyes = isVisible(leftEye, 0.10) && isVisible(rightEye, 0.10);
+  let hasEyes = isVisible(leftEye, 0.1) && isVisible(rightEye, 0.1);
   let hasEars = isVisible(leftEar, 0.08) && isVisible(rightEar, 0.08);
-  let hasShoulders = isVisible(ls, 0.10) && isVisible(rs, 0.10);
+  let hasShoulders = isVisible(ls, 0.1) && isVisible(rs, 0.1);
 
   if (!hasNose && !hasEyes && !hasEars) {
     if (!lastFaceContour) return;
@@ -1026,35 +1236,6 @@ function drawFaceContour(kp) {
 // =============================================================
 //  TRACKING
 // =============================================================
-function getTrackedKeypointsForDraw(kp) {
-  let result = Array.from({ length: 17 }, (_, i) => (kp && kp[i]) ? kp[i] : null);
-
-  for (let i = 0; i < result.length; i++) {
-    let p = result[i];
-
-    if (isVisible(p, 0.10)) {
-      trackedKeypoints[i] = {
-        x: p.x,
-        y: p.y,
-        confidence: p.confidence,
-        seenAt: frameCount,
-      };
-      continue;
-    }
-
-    let last = trackedKeypoints[i];
-    if (last && frameCount - last.seenAt <= TRACKED_POINT_HOLD) {
-      result[i] = {
-        x: last.x,
-        y: last.y,
-        confidence: max(0.12, last.confidence * 0.9),
-      };
-    }
-  }
-
-  return result;
-}
-
 // =============================================================
 //  HUD
 // =============================================================
@@ -1068,6 +1249,9 @@ function drawHUD() {
   textSize(20);
   text("Tempo: " + nf(elapsedTime, 1, 1) + "s", 22, 20);
   text("Recorde: " + nf(recordTime, 1, 1) + "s", 22, 46);
+
+  // Desenha silhueta do jogador embaixo do timer
+  drawPlayerSilhouette(310, 90, 60);
 
   for (let i = 0; i < MAX_LIVES; i++) {
     let x = width - 30 - i * 38;
@@ -1111,8 +1295,16 @@ function drawDeadScreen() {
 
   fill(COL_TEXT);
   textSize(28);
-  text("Tempo desta tentativa: " + nf(elapsedTime, 1, 1) + "s", width / 2, height / 2 - 30);
-  text("Recorde:               " + nf(recordTime, 1, 1) + "s", width / 2, height / 2 + 20);
+  text(
+    "Tempo desta tentativa: " + nf(elapsedTime, 1, 1) + "s",
+    width / 2,
+    height / 2 - 30,
+  );
+  text(
+    "Recorde:               " + nf(recordTime, 1, 1) + "s",
+    width / 2,
+    height / 2 + 20,
+  );
 
   if (elapsedTime > 0 && elapsedTime >= recordTime) {
     fill(255, 220, 50);
