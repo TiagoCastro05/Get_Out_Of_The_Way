@@ -999,6 +999,14 @@ function checkCollision(ob) {
     }
   }
 
+  // TENTATIVA 4: Verificar colisão com a coxa (metade de cima das pernas)
+  if (ob.dir === "right" && ob.zone !== "legs") {
+    if (canUpperLegBlock(kp, minX, maxX, minY, maxY)) {
+      // Coxa foi atingida!
+      return true;
+    }
+  }
+
   // FALLBACK: Verificar colisão com todo o corpo
   return hasBodyCollision(kp, minX, maxX, minY, maxY);
 }
@@ -1088,6 +1096,32 @@ function canTorsoBlock(kp, minX, maxX, minY, maxY) {
   // Linha horizontal entre ancas
   if (isVisible(lh, TORSO_CONF) && isVisible(rh, TORSO_CONF)) {
     if (lineIntersectsRect(lh.x, lh.y, rh.x, rh.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Verifica colisão com a coxa (metade de cima das pernas - entre anca e joelho)
+function canUpperLegBlock(kp, minX, maxX, minY, maxY) {
+  const LEG_CONF = 0.05;
+
+  let lh = kp[11],
+    lk = kp[13]; // Anca esq, Joelho esq
+  let rh = kp[12],
+    rk = kp[14]; // Anca dir, Joelho dir
+
+  // Coxa esquerda: linha entre anca e joelho
+  if (isVisible(lh, LEG_CONF) && isVisible(lk, LEG_CONF)) {
+    if (lineIntersectsRect(lh.x, lh.y, lk.x, lk.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  // Coxa direita: linha entre anca e joelho
+  if (isVisible(rh, LEG_CONF) && isVisible(rk, LEG_CONF)) {
+    if (lineIntersectsRect(rh.x, rh.y, rk.x, rk.y, minX, minY, maxX, maxY)) {
       return true;
     }
   }
