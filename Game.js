@@ -320,8 +320,8 @@ function drawStartScreen() {
   noStroke();
 
   textAlign(CENTER, TOP);
-  textSize(28);
-  text("GET OUT OF THE WAY", width / 2, 24);
+  textSize(70);
+  text("Desvia-te!", width / 2, 24);
 
   // ======= PAINEL ESQUERDO: Metodos de bloqueio ========
   fill(12, 22, 34, 215);
@@ -564,39 +564,6 @@ function drawStartPoseIcon(cx, cy, size) {
   pop();
 }
 
-// Silhueta do jogador mostrando posição ideal durante o jogo
-function drawPlayerSilhouette(cx, cy, size) {
-  push();
-  translate(cx, cy);
-  stroke(180, 240, 255, 120); // Semitransparente
-  strokeWeight(2.5);
-  strokeCap(ROUND);
-  noFill();
-
-  let headR = size * 0.11;
-  let torsoH = size * 0.33;
-  let armLen = size * 0.34;
-  let legLen = size * 0.24;
-
-  // Cabeça
-  circle(0, -torsoH * 0.86, headR * 2);
-  // Torso
-  line(0, -torsoH * 0.7, 0, torsoH * 0.2);
-
-  // A-POSE: braços levantados em ângulo ~45º
-  let armAngle = radians(45);
-  let armX = armLen * sin(armAngle);
-  let armY = -armLen * cos(armAngle);
-
-  line(0, -torsoH * 0.45, -armX, -torsoH * 0.45 + armY);
-  line(0, -torsoH * 0.45, armX, -torsoH * 0.45 + armY);
-
-  // Pernas
-  line(0, torsoH * 0.2, -legLen * 0.55, torsoH * 0.2 + legLen);
-  line(0, torsoH * 0.2, legLen * 0.55, torsoH * 0.2 + legLen);
-
-  pop();
-}
 
 function drawShieldBadge(cx, cy, isSuccess) {
   push();
@@ -682,7 +649,7 @@ function drawPositioningBar() {
   noStroke();
 
   let barHeight = 16;
-  let barY = height - 670; // Mais embaixo
+  let barY = height - 675; // Mais embaixo
   let barWidth = width * 0.3;
   let barX = (width - barWidth) / 2;
 
@@ -1042,6 +1009,14 @@ function checkCollision(ob) {
     }
   }
 
+  // TENTATIVA 5: Verificar colisão com a cabeça
+  if (ob.dir === "right") {
+    if (canHeadBlock(kp, minX, maxX, minY, maxY)) {
+      // Cabeça foi atingida!
+      return true;
+    }
+  }
+
   // FALLBACK: Verificar colisão com todo o corpo
   return hasBodyCollision(kp, minX, maxX, minY, maxY);
 }
@@ -1157,6 +1132,106 @@ function canUpperLegBlock(kp, minX, maxX, minY, maxY) {
   // Coxa direita: linha entre anca e joelho
   if (isVisible(rh, LEG_CONF) && isVisible(rk, LEG_CONF)) {
     if (lineIntersectsRect(rh.x, rh.y, rk.x, rk.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  // Linha horizontal no meio das coxas (entre anca e joelho)
+  if (
+    isVisible(lh, LEG_CONF) &&
+    isVisible(rh, LEG_CONF) &&
+    isVisible(lk, LEG_CONF) &&
+    isVisible(rk, LEG_CONF)
+  ) {
+    let midY = (lh.y + lk.y) * 0.5;
+    if (lineIntersectsRect(lh.x, midY, rh.x, midY, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Verifica colisão com a cabeça
+function canHeadBlock(kp, minX, maxX, minY, maxY) {
+  const HEAD_CONF = 0.05;
+
+  let nose = kp[0];
+  let leftEye = kp[1];
+  let rightEye = kp[2];
+  let leftEar = kp[3];
+  let rightEar = kp[4];
+  let ls = kp[5],
+    rs = kp[6]; // Ombros
+
+  // Linha entre os olhos (topo da cabeça)
+  if (isVisible(leftEye, HEAD_CONF) && isVisible(rightEye, HEAD_CONF)) {
+    if (
+      lineIntersectsRect(
+        leftEye.x,
+        leftEye.y,
+        rightEye.x,
+        rightEye.y,
+        minX,
+        minY,
+        maxX,
+        maxY,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  // Linha entre as orelhas (lateral da cabeça)
+  if (isVisible(leftEar, HEAD_CONF) && isVisible(rightEar, HEAD_CONF)) {
+    if (
+      lineIntersectsRect(
+        leftEar.x,
+        leftEar.y,
+        rightEar.x,
+        rightEar.y,
+        minX,
+        minY,
+        maxX,
+        maxY,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  // Linhas do nariz aos ombros (pescoço)
+  if (isVisible(nose, HEAD_CONF) && isVisible(ls, HEAD_CONF)) {
+    if (
+      lineIntersectsRect(nose.x, nose.y, ls.x, ls.y, minX, minY, maxX, maxY)
+    ) {
+      return true;
+    }
+  }
+
+  if (isVisible(nose, HEAD_CONF) && isVisible(rs, HEAD_CONF)) {
+    if (
+      lineIntersectsRect(nose.x, nose.y, rs.x, rs.y, minX, minY, maxX, maxY)
+    ) {
+      return true;
+    }
+  }
+
+  // Pontos de cabeça como fallback
+  if (isVisible(nose, HEAD_CONF)) {
+    if (pointInRect(nose.x, nose.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(leftEye, HEAD_CONF)) {
+    if (pointInRect(leftEye.x, leftEye.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(rightEye, HEAD_CONF)) {
+    if (pointInRect(rightEye.x, rightEye.y, minX, minY, maxX, maxY)) {
       return true;
     }
   }
@@ -1368,12 +1443,9 @@ function drawHUD() {
 
   fill(COL_TEXT);
   textAlign(LEFT, TOP);
-  textSize(20);
+  textSize(25);
   text("Tempo: " + nf(elapsedTime, 1, 1) + "s", 22, 20);
   text("Recorde: " + nf(recordTime, 1, 1) + "s", 22, 46);
-
-  // Desenha silhueta do jogador embaixo do timer
-  drawPlayerSilhouette(310, 90, 60);
 
   for (let i = 0; i < MAX_LIVES; i++) {
     let x = width - 30 - i * 38;
@@ -1383,7 +1455,7 @@ function drawHUD() {
       push();
       imageMode(CENTER);
       tint(255, i < lives ? 255 : 70);
-      image(imgHeart, x, y, 28, 28);
+      image(imgHeart, x, y, 50, 50);
       pop();
     } else {
       fill(i < lives ? color(220, 50, 50) : color(80, 80, 80));
