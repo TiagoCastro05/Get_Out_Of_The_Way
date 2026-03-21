@@ -46,6 +46,13 @@ const MIN_SPAWN = 30;
 let hitCooldown = 0;
 const HIT_COOLDOWN_FRAMES = 60;
 
+// -- CONFIANÇA PARA COLISÕES ------------------------------------
+const ARM_CONF = 0.03;
+const LEG_CONF = 0.05;
+const HEAD_CONF = 0.05;
+const TORSO_CONF = 0.05;
+const BODY_CONF = 0.05;
+
 // -- CORES ----------------------------------------------------
 let COL_KNIFE, COL_BULLET, COL_HIT, COL_TEXT;
 
@@ -1100,172 +1107,126 @@ function checkCollision(ob) {
   return hasBodyCollision(kp, minX, maxX, minY, maxY);
 }
 
+// ========== HELPERS GENERICAS PARA COLISOES ==========
+// Helper para verificar múltiplas linhas contra retângulo
+function checkLineCollisions(kp, linePairs, confidence, rect) {
+  for (let [idx1, idx2] of linePairs) {
+    let p1 = kp[idx1],
+      p2 = kp[idx2];
+    if (isVisible(p1, confidence) && isVisible(p2, confidence)) {
+      if (
+        lineIntersectsRect(
+          p1.x,
+          p1.y,
+          p2.x,
+          p2.y,
+          rect.minX,
+          rect.minY,
+          rect.maxX,
+          rect.maxY,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Helper para verificar múltiplos pontos contra retângulo
+function checkPointCollisions(kp, pointIndices, confidence, rect) {
+  for (let idx of pointIndices) {
+    let p = kp[idx];
+    if (isVisible(p, confidence)) {
+      if (pointInRect(p.x, p.y, rect.minX, rect.minY, rect.maxX, rect.maxY)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+// ======================================================
+
 // Braços podem bloquear: usa os antebraços (cotovelo->pulso)
 function canArmBlock(kp, minX, maxX, minY, maxY) {
-  const ARM_CONF = 0.03; // MUITO baixo para braços
-
-  let le = kp[7],
-    lw = kp[9]; // Cotovelo esq, Pulso esq
-  let re = kp[8],
-    rw = kp[10]; // Cotovelo dir, Pulso dir
-
-  // Braço esquerdo: linha do cotovelo ao pulso
-  if (isVisible(le, ARM_CONF) && isVisible(lw, ARM_CONF)) {
-    if (lineIntersectsRect(le.x, le.y, lw.x, lw.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Braço direito: linha do cotovelo ao pulso
-  if (isVisible(re, ARM_CONF) && isVisible(rw, ARM_CONF)) {
-    if (lineIntersectsRect(re.x, re.y, rw.x, rw.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Verificação de pontos: cotovelos e pulsos diretos (fallback)
-  if (isVisible(le, ARM_CONF)) {
-    if (pointInRect(le.x, le.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(re, ARM_CONF)) {
-    if (pointInRect(re.x, re.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(lw, ARM_CONF)) {
-    if (pointInRect(lw.x, lw.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(rw, ARM_CONF)) {
-    if (pointInRect(rw.x, rw.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  return false;
+  let rect = { minX, maxX, minY, maxY };
+  // Linhas dos braços: [cotovelo esq, pulso esq], [cotovelo dir, pulso dir]
+  if (
+    checkLineCollisions(
+      kp,
+      [
+        [7, 9],
+        [8, 10],
+      ],
+      ARM_CONF,
+      rect,
+    )
+  )
+    return true;
+  // Pontos de fallback: cotovelos e pulsos
+  return checkPointCollisions(kp, [7, 8, 9, 10], ARM_CONF, rect);
 }
 
 // Pernas podem bloquear: usa as canelas (joelho->tornozelo)
 function canLegBlock(kp, minX, maxX, minY, maxY) {
-  const LEG_CONF = 0.05; // MUITO baixo para pernas
-
-  let lk = kp[13],
-    la = kp[15]; // Joelho esq, Tornozelo esq
-  let rk = kp[14],
-    ra = kp[16]; // Joelho dir, Tornozelo dir
-
-  // Perna esquerda: linha do joelho ao tornozelo
-  if (isVisible(lk, LEG_CONF) && isVisible(la, LEG_CONF)) {
-    if (lineIntersectsRect(lk.x, lk.y, la.x, la.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Perna direita: linha do joelho ao tornozelo
-  if (isVisible(rk, LEG_CONF) && isVisible(ra, LEG_CONF)) {
-    if (lineIntersectsRect(rk.x, rk.y, ra.x, ra.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Verificação de pontos: joelhos e tornozelos diretos (fallback)
-  if (isVisible(lk, LEG_CONF)) {
-    if (pointInRect(lk.x, lk.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(rk, LEG_CONF)) {
-    if (pointInRect(rk.x, rk.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(la, LEG_CONF)) {
-    if (pointInRect(la.x, la.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(ra, LEG_CONF)) {
-    if (pointInRect(ra.x, ra.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  return false;
+  let rect = { minX, maxX, minY, maxY };
+  // Linhas das pernas: [joelho esq, tornozelo esq], [joelho dir, tornozelo dir]
+  if (
+    checkLineCollisions(
+      kp,
+      [
+        [13, 15],
+        [14, 16],
+      ],
+      LEG_CONF,
+      rect,
+    )
+  )
+    return true;
+  // Pontos de fallback: joelhos e tornozelos
+  return checkPointCollisions(kp, [13, 14, 15, 16], LEG_CONF, rect);
 }
 
 // Verificar colisão com corpo todo (se não conseguiu bloquear)
 // Verifica colisão com o tronco (linhas entre ombros-ancas)
 function canTorsoBlock(kp, minX, maxX, minY, maxY) {
-  const TORSO_CONF = 0.05;
-
-  let ls = kp[5],
-    rs = kp[6]; // Ombros
-  let lh = kp[11],
-    rh = kp[12]; // Ancas
-
-  // Verifica linhas do tronco
-  if (isVisible(ls, TORSO_CONF) && isVisible(lh, TORSO_CONF)) {
-    if (lineIntersectsRect(ls.x, ls.y, lh.x, lh.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(rs, TORSO_CONF) && isVisible(rh, TORSO_CONF)) {
-    if (lineIntersectsRect(rs.x, rs.y, rh.x, rh.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Linha horizontal entre ombros
-  if (isVisible(ls, TORSO_CONF) && isVisible(rs, TORSO_CONF)) {
-    if (lineIntersectsRect(ls.x, ls.y, rs.x, rs.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Linha horizontal entre ancas
-  if (isVisible(lh, TORSO_CONF) && isVisible(rh, TORSO_CONF)) {
-    if (lineIntersectsRect(lh.x, lh.y, rh.x, rh.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  return false;
+  let rect = { minX, maxX, minY, maxY };
+  // Linhas do tronco: [lado esq, lado dir, ombros, ancas]
+  return checkLineCollisions(
+    kp,
+    [
+      [5, 11], // Ombro esq para anca esq
+      [6, 12], // Ombro dir para anca dir
+      [5, 6], // Entre ombros
+      [11, 12], // Entre ancas
+    ],
+    TORSO_CONF,
+    rect,
+  );
 }
 
 // Verifica colisão com a coxa (metade de cima das pernas - entre anca e joelho)
 function canUpperLegBlock(kp, minX, maxX, minY, maxY) {
-  const LEG_CONF = 0.05;
+  let rect = { minX, maxX, minY, maxY };
+  // Linhas das coxas: [anca esq, joelho esq], [anca dir, joelho dir]
+  if (
+    checkLineCollisions(
+      kp,
+      [
+        [11, 13],
+        [12, 14],
+      ],
+      LEG_CONF,
+      rect,
+    )
+  )
+    return true;
 
+  // Linha horizontal no meio das coxas (para melhor cobertura)
   let lh = kp[11],
-    lk = kp[13]; // Anca esq, Joelho esq
-  let rh = kp[12],
-    rk = kp[14]; // Anca dir, Joelho dir
-
-  // Coxa esquerda: linha entre anca e joelho
-  if (isVisible(lh, LEG_CONF) && isVisible(lk, LEG_CONF)) {
-    if (lineIntersectsRect(lh.x, lh.y, lk.x, lk.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Coxa direita: linha entre anca e joelho
-  if (isVisible(rh, LEG_CONF) && isVisible(rk, LEG_CONF)) {
-    if (lineIntersectsRect(rh.x, rh.y, rk.x, rk.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Linha horizontal no meio das coxas (entre anca e joelho)
+    rh = kp[12],
+    lk = kp[13],
+    rk = kp[14];
   if (
     isVisible(lh, LEG_CONF) &&
     isVisible(rh, LEG_CONF) &&
@@ -1273,165 +1234,58 @@ function canUpperLegBlock(kp, minX, maxX, minY, maxY) {
     isVisible(rk, LEG_CONF)
   ) {
     let midY = (lh.y + lk.y) * 0.5;
-    if (lineIntersectsRect(lh.x, midY, rh.x, midY, minX, minY, maxX, maxY)) {
+    if (
+      lineIntersectsRect(
+        lh.x,
+        midY,
+        rh.x,
+        midY,
+        rect.minX,
+        rect.minY,
+        rect.maxX,
+        rect.maxY,
+      )
+    ) {
       return true;
     }
   }
 
-  // Verificação de pontos: ancas e joelhos diretos (fallback para gaps)
-  if (isVisible(lh, LEG_CONF)) {
-    if (pointInRect(lh.x, lh.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(rh, LEG_CONF)) {
-    if (pointInRect(rh.x, rh.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(lk, LEG_CONF)) {
-    if (pointInRect(lk.x, lk.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(rk, LEG_CONF)) {
-    if (pointInRect(rk.x, rk.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  return false;
+  // Pontos de fallback: ancas e joelhos
+  return checkPointCollisions(kp, [11, 12, 13, 14], LEG_CONF, rect);
 }
 
 // Verifica colisão com a cabeça
 function canHeadBlock(kp, minX, maxX, minY, maxY) {
-  const HEAD_CONF = 0.05;
+  let rect = { minX, maxX, minY, maxY };
+  // Linhas da cabeça: [entre olhos, entre orelhas, nariz para ombros]
+  if (
+    checkLineCollisions(
+      kp,
+      [
+        [1, 2], // Entre olhos
+        [3, 4], // Entre orelhas
+        [0, 5], // Nariz para ombro esq (pescoço)
+        [0, 6], // Nariz para ombro dir (pescoço)
+      ],
+      HEAD_CONF,
+      rect,
+    )
+  )
+    return true;
 
-  let nose = kp[0];
-  let leftEye = kp[1];
-  let rightEye = kp[2];
-  let leftEar = kp[3];
-  let rightEar = kp[4];
-  let ls = kp[5],
-    rs = kp[6]; // Ombros
-
-  // Linha entre os olhos (topo da cabeça)
-  if (isVisible(leftEye, HEAD_CONF) && isVisible(rightEye, HEAD_CONF)) {
-    if (
-      lineIntersectsRect(
-        leftEye.x,
-        leftEye.y,
-        rightEye.x,
-        rightEye.y,
-        minX,
-        minY,
-        maxX,
-        maxY,
-      )
-    ) {
-      return true;
-    }
-  }
-
-  // Linha entre as orelhas (lateral da cabeça)
-  if (isVisible(leftEar, HEAD_CONF) && isVisible(rightEar, HEAD_CONF)) {
-    if (
-      lineIntersectsRect(
-        leftEar.x,
-        leftEar.y,
-        rightEar.x,
-        rightEar.y,
-        minX,
-        minY,
-        maxX,
-        maxY,
-      )
-    ) {
-      return true;
-    }
-  }
-
-  // Linhas do nariz aos ombros (pescoço)
-  if (isVisible(nose, HEAD_CONF) && isVisible(ls, HEAD_CONF)) {
-    if (
-      lineIntersectsRect(nose.x, nose.y, ls.x, ls.y, minX, minY, maxX, maxY)
-    ) {
-      return true;
-    }
-  }
-
-  if (isVisible(nose, HEAD_CONF) && isVisible(rs, HEAD_CONF)) {
-    if (
-      lineIntersectsRect(nose.x, nose.y, rs.x, rs.y, minX, minY, maxX, maxY)
-    ) {
-      return true;
-    }
-  }
-
-  // Pontos de cabeça como fallback
-  if (isVisible(nose, HEAD_CONF)) {
-    if (pointInRect(nose.x, nose.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(leftEye, HEAD_CONF)) {
-    if (pointInRect(leftEye.x, leftEye.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(rightEye, HEAD_CONF)) {
-    if (pointInRect(rightEye.x, rightEye.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  // Adicionar orelhas ao fallback também
-  if (isVisible(leftEar, HEAD_CONF)) {
-    if (pointInRect(leftEar.x, leftEar.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  if (isVisible(rightEar, HEAD_CONF)) {
-    if (pointInRect(rightEar.x, rightEar.y, minX, minY, maxX, maxY)) {
-      return true;
-    }
-  }
-
-  return false;
+  // Pontos de fallback: nariz, olhos, orelhas
+  return checkPointCollisions(kp, [0, 1, 2, 3, 4], HEAD_CONF, rect);
 }
 
 function hasBodyCollision(kp, minX, maxX, minY, maxY) {
-  const BODY_CONF = 0.05; // MUITO baixo
-
+  let rect = { minX, maxX, minY, maxY };
   // Pontos principais do corpo
-  let criticalPoints = [
-    0, // Nariz
-    5,
-    6, // Ombros
-    11,
-    12, // Ancas
-    7,
-    8, // Cotovelos
-    13,
-    14, // Joelhos
-  ];
-
-  for (let idx of criticalPoints) {
-    let p = kp[idx];
-    if (isVisible(p, BODY_CONF)) {
-      if (pointInRect(p.x, p.y, minX, minY, maxX, maxY)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return checkPointCollisions(
+    kp,
+    [0, 5, 6, 11, 12, 7, 8, 13, 14],
+    BODY_CONF,
+    rect,
+  );
 }
 
 // =============================================================
