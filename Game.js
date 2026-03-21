@@ -462,9 +462,10 @@ function drawStartScreen() {
 
   noStroke();
 
+  fill(120, 230, 255); // Sempre azul, esqueleto ativo ou não
   textAlign(CENTER, TOP);
   textSize(70);
-  text("Desvia-te!", width / 2, 24);
+  text("Desvia-te!", width / 2, 10);
 
   // ======= PAINEL ESQUERDO: Metodos de bloqueio ========
   fill(12, 22, 34, 215);
@@ -1174,16 +1175,16 @@ function checkCollision(ob) {
   let minY = ob.y - ob.h - hitPad;
   let maxY = ob.y + ob.h + hitPad;
 
-  // TENTATIVA 1: Bloquear com os braços (antebraços)
-  if (ob.type === "knife" && ob.dir === "right") {
+  // TENTATIVA 1: Bloquear com os braços (antebraços) - funciona para facas da direita e de cima
+  if (ob.type === "knife" && (ob.dir === "right" || ob.dir === "top")) {
     if (canArmBlock(kp, minX, maxX, minY, maxY)) {
       // Braço bloqueou com sucesso! Remove o obstáculo
       return "blocked";
     }
   }
 
-  // TENTATIVA 2: Bloquear com as pernas
-  if (ob.dir === "right" && ob.zone === "legs") {
+  // TENTATIVA 2: Bloquear com as pernas - funciona para facas da direita e de cima
+  if (ob.zone === "legs" && (ob.dir === "right" || ob.dir === "top")) {
     if (canLegBlock(kp, minX, maxX, minY, maxY)) {
       // Perna bloqueou com sucesso! Remove o obstáculo
       return "blocked";
@@ -1241,6 +1242,31 @@ function canArmBlock(kp, minX, maxX, minY, maxY) {
     }
   }
 
+  // Verificação de pontos: cotovelos e pulsos diretos (fallback)
+  if (isVisible(le, ARM_CONF)) {
+    if (pointInRect(le.x, le.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(re, ARM_CONF)) {
+    if (pointInRect(re.x, re.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(lw, ARM_CONF)) {
+    if (pointInRect(lw.x, lw.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(rw, ARM_CONF)) {
+    if (pointInRect(rw.x, rw.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -1263,6 +1289,31 @@ function canLegBlock(kp, minX, maxX, minY, maxY) {
   // Perna direita: linha do joelho ao tornozelo
   if (isVisible(rk, LEG_CONF) && isVisible(ra, LEG_CONF)) {
     if (lineIntersectsRect(rk.x, rk.y, ra.x, ra.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  // Verificação de pontos: joelhos e tornozelos diretos (fallback)
+  if (isVisible(lk, LEG_CONF)) {
+    if (pointInRect(lk.x, lk.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(rk, LEG_CONF)) {
+    if (pointInRect(rk.x, rk.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(la, LEG_CONF)) {
+    if (pointInRect(la.x, la.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(ra, LEG_CONF)) {
+    if (pointInRect(ra.x, ra.y, minX, minY, maxX, maxY)) {
       return true;
     }
   }
@@ -1342,6 +1393,31 @@ function canUpperLegBlock(kp, minX, maxX, minY, maxY) {
   ) {
     let midY = (lh.y + lk.y) * 0.5;
     if (lineIntersectsRect(lh.x, midY, rh.x, midY, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  // Verificação de pontos: ancas e joelhos diretos (fallback para gaps)
+  if (isVisible(lh, LEG_CONF)) {
+    if (pointInRect(lh.x, lh.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(rh, LEG_CONF)) {
+    if (pointInRect(rh.x, rh.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(lk, LEG_CONF)) {
+    if (pointInRect(lk.x, lk.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(rk, LEG_CONF)) {
+    if (pointInRect(rk.x, rk.y, minX, minY, maxX, maxY)) {
       return true;
     }
   }
@@ -1429,6 +1505,19 @@ function canHeadBlock(kp, minX, maxX, minY, maxY) {
 
   if (isVisible(rightEye, HEAD_CONF)) {
     if (pointInRect(rightEye.x, rightEye.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  // Adicionar orelhas ao fallback também
+  if (isVisible(leftEar, HEAD_CONF)) {
+    if (pointInRect(leftEar.x, leftEar.y, minX, minY, maxX, maxY)) {
+      return true;
+    }
+  }
+
+  if (isVisible(rightEar, HEAD_CONF)) {
+    if (pointInRect(rightEar.x, rightEar.y, minX, minY, maxX, maxY)) {
       return true;
     }
   }
@@ -1725,7 +1814,11 @@ function drawDeadScreen() {
 
   fill(130, 230, 255);
   textSize(20);
-  text("Ou faz T-POSE para reiniciar", width / 2, height / 2 + 150);
+  text(
+    "Ou levante os braços 30º/45º para reiniciar",
+    width / 2,
+    height / 2 + 150,
+  );
 
   drawTPoseBar();
 
