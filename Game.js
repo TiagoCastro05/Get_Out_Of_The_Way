@@ -46,6 +46,15 @@ const MIN_SPAWN = 30;
 let hitCooldown = 0;
 const HIT_COOLDOWN_FRAMES = 60;
 
+// -- TREMOR DE ECRÃ AO LEVAR DANO -----------------------------
+const DAMAGE_SHAKE_FRAMES = 18;
+const DAMAGE_SHAKE_POWER = 14;
+let damageShakeFrames = 0;
+
+// -- FLASH VERMELHO AO LEVAR DANO -----------------------------
+const DAMAGE_FLASH_FRAMES = 16;
+let damageFlashFrames = 0;
+
 // -- CONFIANÇA PARA COLISÕES ------------------------------------
 const ARM_CONF = 0.03;
 const LEG_CONF = 0.05;
@@ -200,18 +209,30 @@ function lineIntersectsRect(x1, y1, x2, y2, minX, minY, maxX, maxY) {
 // =============================================================
 function preload() {
   imgKnife = loadImage(
-    "Imagens/Knife.png",
+    "Imagens/gelado.png",
     () => {},
     () => {
-      imgKnife = null;
+      imgKnife = loadImage(
+        "Imagens/Knife.png",
+        () => {},
+        () => {
+          imgKnife = null;
+        },
+      );
     },
   );
 
   imgBullet = loadImage(
-    "Imagens/Bullet.png",
+    "Imagens/hamburger.png",
     () => {},
     () => {
-      imgBullet = null;
+      imgBullet = loadImage(
+        "Imagens/Bullet.png",
+        () => {},
+        () => {
+          imgBullet = null;
+        },
+      );
     },
   );
 
@@ -364,10 +385,21 @@ function onPoses(results) {
 //  DRAW
 // =============================================================
 function draw() {
-  drawMirroredVideo();
-
   if (hitCooldown > 0) hitCooldown--;
   if (skeletonToggleCooldown > 0) skeletonToggleCooldown--;
+
+  let shakeX = 0;
+  let shakeY = 0;
+  if (damageShakeFrames > 0) {
+    let intensity = DAMAGE_SHAKE_POWER * (damageShakeFrames / DAMAGE_SHAKE_FRAMES);
+    shakeX = random(-intensity, intensity);
+    shakeY = random(-intensity * 0.6, intensity * 0.6);
+    damageShakeFrames--;
+  }
+
+  push();
+  translate(shakeX, shakeY);
+  drawMirroredVideo();
 
   // Controla música de fundo no ecrã inicial
   if (gameState === "start") {
@@ -401,6 +433,16 @@ function draw() {
     case "dead":
       drawDeadScreen();
       break;
+  }
+
+  pop();
+
+  if (damageFlashFrames > 0) {
+    let alpha = map(damageFlashFrames, DAMAGE_FLASH_FRAMES, 0, 120, 0);
+    noStroke();
+    fill(255, 35, 35, alpha);
+    rect(0, 0, width, height);
+    damageFlashFrames--;
   }
 }
 
@@ -517,7 +559,7 @@ function drawStartScreen() {
     pop();
   }
 
-  // Bala - mantém o padrão antigo
+  // Hamburger - mantém o padrão antigo
   fill(24, 40, 58, 230);
   noStroke();
   let bulletBoxY = legBoxY + armBoxH + 10;
@@ -529,9 +571,9 @@ function drawStartScreen() {
   fill(COL_TEXT);
   textSize(20);
   textAlign(CENTER, TOP);
-  text("Bala", leftX + leftW / 2, bulletBoxY + 6);
+  text("Hamburger", leftX + leftW / 2, bulletBoxY + 6);
 
-  // Desenha a bala (imagem ou fallback)
+  // Desenha o hamburger (imagem ou fallback)
   if (imgBullet) {
     push();
     imageMode(CENTER);
@@ -842,19 +884,19 @@ function updatePlaying() {
 //  SPAWN
 // =============================================================
 function spawnObstacle() {
-  let isBullet = random() < 0.35;
+  let isHamburger = random() < 0.35;
   let fromTop = random() < 0.45;
   let zones = getScreenZones();
 
   let speedProgress = constrain(elapsedTime / 90, 0, 1);
   let speed = lerp(random(1.6, 2.3), random(3.8, 5.2), speedProgress);
 
-  if (isBullet) {
-    let bulletZone = random() < 0.65 ? "head" : "legs";
+  if (isHamburger) {
+    let hamburgerZone = random() < 0.65 ? "head" : "legs";
     obstacles.push({
-      type: "bullet",
+      type: "hamburger",
       dir: "top",
-      zone: bulletZone,
+      zone: hamburgerZone,
       x: random(60, width - 60),
       y: -30,
       vx: 0,
@@ -967,10 +1009,9 @@ function drawObstacle(ob) {
 
   let moveAngle = atan2(ob.vy, ob.vx);
 
-  if (ob.type === "bullet") {
+  if (ob.type === "hamburger") {
     if (imgBullet) {
       imageMode(CENTER);
-      rotate(moveAngle + PI);
       image(imgBullet, 0, 0, 52, 52);
     } else {
       noStroke();
@@ -997,14 +1038,6 @@ function drawObstacle(ob) {
   }
 
   pop();
-
-  if (ob.type === "bullet" && ob.x < width * 0.65 && ob.x > 60) {
-    noStroke();
-    fill(255, 80, 80, 210);
-    textAlign(CENTER, BOTTOM);
-    textSize(13);
-    text("DESVIA!", ob.x, ob.y - (ob.h + 14));
-  }
 }
 
 function drawLegHint(ob) {
@@ -1023,7 +1056,7 @@ function drawTopWarning(ob) {
   let blinkOn = frameCount % 20 < 12;
 
   let bgCol =
-    ob.type === "bullet"
+    ob.type === "hamburger"
       ? color(255, 220, 70, alpha)
       : color(255, 110, 110, alpha);
 
@@ -1490,60 +1523,171 @@ function drawHUD() {
   }
 }
 
+function drawGameOverCharacter(cx, cy) {
+  push();
+  noFill();
+  stroke(150, 230, 255, 220);
+  strokeWeight(6);
+  strokeCap(ROUND);
+
+  if (poses.length > 0) {
+    let kp = getSmoothedKeypoints();
+    if (kp && kp.length >= 17) {
+      drawLimb(kp[5], kp[6], 0.05);
+      drawLimb(kp[5], kp[11], 0.05);
+      drawLimb(kp[6], kp[12], 0.05);
+      drawLimb(kp[11], kp[12], 0.05);
+
+      drawLimb(kp[5], kp[7], 0.02);
+      drawLimb(kp[7], kp[9], 0.02);
+      drawLimb(kp[6], kp[8], 0.02);
+      drawLimb(kp[8], kp[10], 0.02);
+
+      drawLimb(kp[11], kp[13], 0.05);
+      drawLimb(kp[13], kp[15], 0.05);
+      drawLimb(kp[12], kp[14], 0.05);
+      drawLimb(kp[14], kp[16], 0.05);
+
+      noStroke();
+      fill(180, 245, 255, 210);
+      for (let i of [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
+        if (isVisible(kp[i], 0.02)) {
+          circle(kp[i].x, kp[i].y, i === 0 ? 14 : 10);
+        }
+      }
+
+      pop();
+      return;
+    }
+  }
+
+  translate(cx, cy);
+  stroke(150, 230, 255, 220);
+  strokeWeight(6);
+  circle(0, -80, 48);
+  line(0, -55, 0, 45);
+  line(0, -25, -42, 10);
+  line(0, -25, 42, 10);
+  line(0, 45, -30, 105);
+  line(0, 45, 30, 105);
+  pop();
+}
+
 // =============================================================
 //  ECRA DE MORTE
 // =============================================================
 function drawDeadScreen() {
   updateTPoseSyncStart();
-  drawSkeleton();
 
-  fill(0, 0, 0, 210);
+  fill(0, 0, 0, 195);
   noStroke();
   rect(0, 0, width, height);
 
+  let panelW = min(width * 0.84, 980);
+  let panelH = min(height * 0.76, 600);
+  let panelX = (width - panelW) / 2;
+  let panelY = (height - panelH) / 2;
+  let titleSize = min(56, panelW * 0.09);
+  let statSize = min(36, panelW * 0.05);
+  let badgeSize = min(30, panelW * 0.04);
+  let actionSize = min(22, panelW * 0.031);
+  let helperSize = min(18, panelW * 0.024);
+
+  // Painel principal
+  fill(10, 20, 32, 226);
+  rect(panelX, panelY, panelW, panelH, 24);
+  stroke(130, 220, 245, 70);
+  strokeWeight(2);
+  noFill();
+  rect(panelX + 8, panelY + 8, panelW - 16, panelH - 16, 20);
+  noStroke();
+
+  // Cabeçalho
+  fill(18, 32, 48, 228);
+  rect(panelX + 20, panelY + 18, panelW - 40, 92, 18);
   fill(COL_HIT);
   textAlign(CENTER, CENTER);
-  textSize(52);
-  text("GAME OVER", width / 2, height / 2 - 100);
+  textSize(titleSize);
+  text("GAME OVER", width / 2, panelY + 64);
+
+  let poseCardW = min(230, panelW * 0.28);
+  let infoW = panelW - poseCardW - 92;
+  let infoX = panelX + 34;
+  let poseCardX = infoX + infoW + 24;
+  let contentTop = panelY + 128;
+
+  // Cartão das estatísticas
+  fill(16, 28, 42, 225);
+  rect(infoX, contentTop, infoW, 160, 16);
+
+  fill(190, 235, 250);
+  textAlign(LEFT, CENTER);
+  textSize(18);
+  text("RESULTADOS", infoX + 18, contentTop + 24);
 
   fill(COL_TEXT);
-  textSize(28);
-  text(
-    "Tempo desta tentativa: " + nf(elapsedTime, 1, 1) + "s",
-    width / 2,
-    height / 2 - 30,
-  );
-  text(
-    "Recorde:               " + nf(recordTime, 1, 1) + "s",
-    width / 2,
-    height / 2 + 20,
-  );
+  textSize(statSize);
+  text("Tempo: " + nf(elapsedTime, 1, 1) + "s", infoX + 18, contentTop + 72);
+  text("Recorde: " + nf(recordTime, 1, 1) + "s", infoX + 18, contentTop + 118);
 
   if (elapsedTime > 0 && elapsedTime >= recordTime) {
     fill(255, 220, 50);
-    textSize(22);
-    text("Novo Recorde! Parabens!", width / 2, height / 2 + 70);
+    textSize(badgeSize);
+    textAlign(CENTER, CENTER);
+    text("Novo Recorde! Parabéns!", infoX + infoW / 2, contentTop + 192);
   }
 
-  textSize(22);
-  if (frameCount % 60 < 40) {
-    fill(255, 230, 80);
-    text("Prima ESPACO para tentar de novo", width / 2, height / 2 + 120);
+  // Cartão de pose para reiniciar
+  fill(16, 28, 42, 225);
+  rect(poseCardX, contentTop, poseCardW, 240, 16);
+
+  fill(185, 235, 248);
+  textAlign(CENTER, CENTER);
+  textSize(18);
+  text("Posição para reiniciar", poseCardX + poseCardW / 2, contentTop + 24);
+
+  if (imgPoseInicial) {
+    push();
+    imageMode(CENTER);
+    image(imgPoseInicial, poseCardX + poseCardW / 2, contentTop + 138, 132, 150);
+    pop();
+  } else {
+    push();
+    translate(poseCardX + poseCardW / 2, contentTop + 146);
+    stroke(150, 230, 255, 220);
+    strokeWeight(5);
+    noFill();
+    circle(0, -42, 30);
+    line(0, -25, 0, 42);
+    line(0, -8, -30, 14);
+    line(0, -8, 30, 14);
+    line(0, 42, -20, 85);
+    line(0, 42, 20, 85);
+    pop();
   }
 
+  // Cartões de ação
+  let actionY = panelY + panelH - 178;
+  fill(34, 46, 18, frameCount % 60 < 40 ? 220 : 175);
+  rect(infoX, actionY, infoW, 52, 12);
+  fill(255, 235, 95);
+  textAlign(CENTER, CENTER);
+  textSize(actionSize);
+  text("Prima ESPACO para tentar de novo", infoX + infoW / 2, actionY + 26);
+
+  fill(18, 45, 56, 230);
+  rect(infoX, actionY + 62, infoW, 44, 12);
   fill(130, 230, 255);
-  textSize(20);
-  text(
-    "Ou levante os braços 30º/45º para reiniciar",
-    width / 2,
-    height / 2 + 150,
-  );
+  textSize(actionSize);
+  text("Ou levante os braços 30º/45º para reiniciar", infoX + infoW / 2, actionY + 84);
+
+  fill(30, 30, 36, 215);
+  rect(infoX, actionY + 116, infoW, 36, 10);
+  fill(COL_TEXT);
+  textSize(helperSize);
+  text("Prima I para voltar ao ecrã inicial", infoX + infoW / 2, actionY + 134);
 
   drawTPoseBar();
-
-  fill(COL_TEXT);
-  textSize(18);
-  text("Prima I para voltar ao ecra inicial", width / 2, height / 2 + 185);
 }
 
 // =============================================================
@@ -1591,6 +1735,8 @@ function endGame() {
 function loseLife() {
   lives = max(0, lives - 1);
   hitCooldown = HIT_COOLDOWN_FRAMES;
+  damageShakeFrames = DAMAGE_SHAKE_FRAMES;
+  damageFlashFrames = DAMAGE_FLASH_FRAMES;
 
   // Toca som de dano
   if (soundDamage && soundDamage.isLoaded()) {
